@@ -113,6 +113,8 @@ weighted_crossentropy = _get_env_bool('ICARL_WEIGHTED_CE', False)
 trainable_part = _get_env_str('ICARL_TRAINABLE_PART', 'all')
 use_proto_align = _get_env_bool('ICARL_USE_PROTO_ALIGN', False)
 proto_align_lambda = _get_env_float('ICARL_PROTO_ALIGN_LAMBDA', 0.1)
+use_task_adapter = _get_env_bool('ICARL_USE_TASK_ADAPTER', False)
+task_adapter_dim = _get_env_int('ICARL_TASK_ADAPTER_DIM', 32)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -134,12 +136,22 @@ for seed in range(1, num_seeds+1):
     state_log = f'Replay memory size:{memory_size}, learning_rate:{learning_rate}, epochs:{epochs}, \
         is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, is_contrastive_loss:{is_contrastive_loss},\
             lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}, \
-                use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}'
+                use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, \
+                    use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}'
     log.record(state_log)
     print(state_log)
 
     # feature_extractor=EEGNet(n_classes=numclass, Chans=22, Samples=1001, kernLength=64,F1=16, D=2, F2=32, dropoutRate=0.5)
-    feature_extractor=mlm_mask(emb_size=256, depth=6, n_classes=2, pretrain=pretrain_path,pretrainmode=False)
+    feature_extractor=mlm_mask(
+        emb_size=256,
+        depth=6,
+        n_classes=2,
+        pretrain=pretrain_path,
+        pretrainmode=False,
+        use_task_adapter=use_task_adapter,
+        adapter_dim=task_adapter_dim,
+        num_tasks=num_stages,
+    )
     _configure_trainable_params(feature_extractor, trainable_part)
 
     model=CBiCaRL(seed,result_dir, data_path, is_cross_session, numclass,\

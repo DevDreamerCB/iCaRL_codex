@@ -10,6 +10,32 @@ from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange, Reduce
 import math
 
+
+class TaskEmbeddingAdapter(nn.Module):
+    def __init__(self, emb_size, adapter_dim=32, num_tasks=3, dropout=0.1):
+        super().__init__()
+        self.num_tasks = num_tasks
+        self.current_task = 0
+        self.norm = nn.LayerNorm(emb_size)
+        self.down = nn.ModuleList([nn.Linear(emb_size, adapter_dim) for _ in range(num_tasks)])
+        self.up = nn.ModuleList([nn.Linear(adapter_dim, emb_size) for _ in range(num_tasks)])
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(dropout)
+
+        for up in self.up:
+            nn.init.zeros_(up.weight)
+            nn.init.zeros_(up.bias)
+
+    def set_current_task(self, task_id):
+        self.current_task = max(0, min(int(task_id), self.num_tasks - 1))
+
+    def forward(self, x):
+        x_norm = self.norm(x)
+        hidden = self.down[self.current_task](x_norm)
+        hidden = self.act(hidden)
+        hidden = self.dropout(hidden)
+        return x + self.up[self.current_task](hidden)
+
 class PatchEmbedding(nn.Module):
     def __init__(self, embed_dim=128, num_channels=45):
         super().__init__()
@@ -127,7 +153,8 @@ class decoder_fft(nn.Module):
         return out
 
 class mlm_mask(nn.Module):  
-    def __init__(self, emb_size=128, depth=6, n_classes=2,mask_ratio=0.5, pretrain=None,pretrainmode=False):
+    def __init__(self, emb_size=128, depth=6, n_classes=2,mask_ratio=0.5, pretrain=None,pretrainmode=False,
+                 use_task_adapter=False, adapter_dim=32, num_tasks=3):
         super().__init__()
         self.pretrainmode = pretrainmode
         self.embedding = PatchEmbedding(embed_dim=emb_size)
@@ -135,6 +162,9 @@ class mlm_mask(nn.Module):
         self.clshead = nn.Linear(emb_size,n_classes)
         self.mask_ratio = mask_ratio
         self.feature_dim = emb_size
+        self.use_task_adapter = use_task_adapter
+        self.current_task = 0
+        self.task_adapter = TaskEmbeddingAdapter(emb_size, adapter_dim=adapter_dim, num_tasks=num_tasks) if use_task_adapter else None
         if pretrain is not None:
             self.init_from_pretrained(pretrain)
         
@@ -166,6 +196,8 @@ class mlm_mask(nn.Module):
 
     def forward(self, x):
         original_x = self.embedding(x) 
+        if self.task_adapter is not None:
+            original_x = self.task_adapter(original_x)
 
         if self.pretrainmode:
 
@@ -184,6 +216,11 @@ class mlm_mask(nn.Module):
             # cls_output = self.clshead(pooled)
             # return pooled, cls_output
             return pooled
+
+    def set_current_task(self, task_id):
+        self.current_task = int(task_id)
+        if self.task_adapter is not None:
+            self.task_adapter.set_current_task(task_id)
 
     def init_from_pretrained(self, pretrained_path, freeze_encoder=False, strict=True):
         pretrained_dict = torch.load(pretrained_path)

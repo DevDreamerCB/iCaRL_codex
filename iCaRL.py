@@ -120,6 +120,9 @@ class CBiCaRL:
             self.model.Incremental_learning(self.numclass)
         else:
             self.old_class_prototypes = None
+
+        if hasattr(self.model.feature, "set_current_task"):
+            self.model.feature.set_current_task(self.stage - 1)
         self.model.train()
         self.model.to(device)
         

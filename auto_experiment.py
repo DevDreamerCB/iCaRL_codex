@@ -76,6 +76,8 @@ def run_experiment(args):
     env["ICARL_TRAINABLE_PART"] = args.trainable_part
     env["ICARL_USE_PROTO_ALIGN"] = "true" if args.use_proto_align else "false"
     env["ICARL_PROTO_ALIGN_LAMBDA"] = str(args.proto_align_lambda)
+    env["ICARL_USE_TASK_ADAPTER"] = "true" if args.use_task_adapter else "false"
+    env["ICARL_TASK_ADAPTER_DIM"] = str(args.task_adapter_dim)
 
     if args.lr is not None:
         env["ICARL_LR"] = str(args.lr)
@@ -142,6 +144,10 @@ def main():
     parser.add_argument("--no-use-proto-align", dest="use_proto_align", action="store_false")
     parser.set_defaults(use_proto_align=False)
     parser.add_argument("--proto-align-lambda", type=float, default=0.1)
+    parser.add_argument("--use-task-adapter", action="store_true")
+    parser.add_argument("--no-use-task-adapter", dest="use_task_adapter", action="store_false")
+    parser.set_defaults(use_task_adapter=False)
+    parser.add_argument("--task-adapter-dim", type=int, default=32)
     parser.add_argument("--use-contrastive", action="store_true")
     parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
     parser.set_defaults(use_contrastive=True)
