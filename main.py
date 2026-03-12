@@ -29,6 +29,33 @@ def _get_env_optional_int(name, default):
         return None
     return int(value)
 
+
+def _get_env_str(name, default):
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return value
+
+
+def _configure_trainable_params(feature_extractor, mode):
+    mode = (mode or "all").strip().lower()
+    if mode == "all":
+        return
+
+    for _, param in feature_extractor.named_parameters():
+        param.requires_grad = False
+
+    if mode == "embedding_only":
+        for name, param in feature_extractor.named_parameters():
+            if name.startswith("embedding."):
+                param.requires_grad = True
+    elif mode == "embedding_transformer":
+        for name, param in feature_extractor.named_parameters():
+            if name.startswith("embedding.") or name.startswith("transformer."):
+                param.requires_grad = True
+    else:
+        raise ValueError(f"Unsupported ICARL_TRAINABLE_PART: {mode}")
+
 GPU_ID = _get_env_optional_int("ICARL_GPU_ID", 6)
 
 if GPU_ID is None:
@@ -83,6 +110,7 @@ lwf_T = _get_env_float('ICARL_LWF_T', 2.0)
 is_align = _get_env_bool('ICARL_USE_ALIGN', True)
 
 weighted_crossentropy = _get_env_bool('ICARL_WEIGHTED_CE', False)
+trainable_part = _get_env_str('ICARL_TRAINABLE_PART', 'all')
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -103,12 +131,13 @@ for seed in range(1, num_seeds+1):
 
     state_log = f'Replay memory size:{memory_size}, learning_rate:{learning_rate}, epochs:{epochs}, \
         is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, is_contrastive_loss:{is_contrastive_loss},\
-            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}'
+            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}'
     log.record(state_log)
     print(state_log)
 
     # feature_extractor=EEGNet(n_classes=numclass, Chans=22, Samples=1001, kernLength=64,F1=16, D=2, F2=32, dropoutRate=0.5)
     feature_extractor=mlm_mask(emb_size=256, depth=6, n_classes=2, pretrain=pretrain_path,pretrainmode=False)
+    _configure_trainable_params(feature_extractor, trainable_part)
 
     model=CBiCaRL(seed,result_dir, data_path, is_cross_session, numclass,\
         feature_extractor,batch_size,\

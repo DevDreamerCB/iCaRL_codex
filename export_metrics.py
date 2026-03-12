@@ -12,6 +12,7 @@ FINAL_ACC_RE = re.compile(r"Final Total Accuracy:\s*([0-9.]+)%")
 STATE_RE = re.compile(
     r"Replay memory size:(?P<memory>\d+), learning_rate:(?P<lr>[0-9.]+), epochs:(?P<epochs>\d+),"
 )
+TRAINABLE_RE = re.compile(r"trainable_part\s*=\s*(?P<trainable>[A-Za-z_]+)")
 
 
 def parse_single_log(log_path: Path):
@@ -19,7 +20,7 @@ def parse_single_log(log_path: Path):
     current_stage = None
     pending_stage_total = None
     in_subject_block = False
-    config = {"memory_size": "", "learning_rate": "", "epochs": ""}
+    config = {"memory_size": "", "learning_rate": "", "epochs": "", "trainable_part": ""}
 
     with log_path.open("r", encoding="utf-8") as f:
         for raw_line in f:
@@ -30,6 +31,9 @@ def parse_single_log(log_path: Path):
                 config["memory_size"] = state_match.group("memory")
                 config["learning_rate"] = state_match.group("lr")
                 config["epochs"] = state_match.group("epochs")
+            trainable_match = TRAINABLE_RE.search(line)
+            if trainable_match:
+                config["trainable_part"] = trainable_match.group("trainable")
 
             stage_match = STAGE_START_RE.search(line)
             if stage_match:
@@ -67,9 +71,36 @@ def parse_single_log(log_path: Path):
         "epochs": config["epochs"],
         "learning_rate": config["learning_rate"],
         "memory_size": config["memory_size"],
+        "trainable_part": config["trainable_part"],
         "stage1_total": stage_totals.get(1, ""),
         "stage2_total": stage_totals.get(2, ""),
         "stage3_total": stage_totals.get(3, ""),
+    }
+
+
+def parse_run_dir(log_dir: Path):
+    log_files = sorted(log_dir.glob("log_*.txt"))
+    if not log_files:
+        raise RuntimeError(f"No log files found under {log_dir}")
+
+    parsed_logs = [parse_single_log(p) for p in log_files]
+
+    def mean_stage(key):
+        values = [float(p[key]) for p in parsed_logs if p[key] != ""]
+        if not values:
+            return ""
+        return round(sum(values) / len(values), 2)
+
+    return {
+        "run_tag": log_dir.name,
+        "log_file": ";".join(p["log_file"] for p in parsed_logs),
+        "epochs": parsed_logs[-1].get("epochs", ""),
+        "learning_rate": parsed_logs[-1].get("learning_rate", ""),
+        "memory_size": parsed_logs[-1].get("memory_size", ""),
+        "trainable_part": parsed_logs[-1].get("trainable_part", ""),
+        "stage1_total": mean_stage("stage1_total"),
+        "stage2_total": mean_stage("stage2_total"),
+        "stage3_total": mean_stage("stage3_total"),
     }
 
 
@@ -125,6 +156,7 @@ def write_latest_md(rows, md_path: Path):
                 f"- seeds: `{latest.get('seeds', '')}`",
                 f"- gpu: `{latest.get('gpu', '')}`",
                 f"- note: `{latest.get('note', '')}`",
+                f"- trainable part: `{latest.get('trainable_part', '')}`",
                 f"- task1 / stage1 total: `{latest['stage1_total']}`",
                 f"- task2 / stage2 total: `{latest['stage2_total']}`",
                 f"- task3 / stage3 total: `{latest['stage3_total']}`",
@@ -172,6 +204,7 @@ def append_experiment_row(
         "epochs",
         "learning_rate",
         "memory_size",
+        "trainable_part",
         "stage1_total",
         "stage2_total",
         "stage3_total",
@@ -191,6 +224,7 @@ def append_experiment_row(
         "epochs": parsed_row.get("epochs", ""),
         "learning_rate": parsed_row.get("learning_rate", ""),
         "memory_size": parsed_row.get("memory_size", ""),
+        "trainable_part": parsed_row.get("trainable_part", ""),
         "stage1_total": parsed_row.get("stage1_total", ""),
         "stage2_total": parsed_row.get("stage2_total", ""),
         "stage3_total": parsed_row.get("stage3_total", ""),
@@ -226,6 +260,7 @@ def write_experiment_rows(csv_path: Path, rows):
         "epochs",
         "learning_rate",
         "memory_size",
+        "trainable_part",
         "stage1_total",
         "stage2_total",
         "stage3_total",
@@ -247,7 +282,7 @@ def write_experiment_rows(csv_path: Path, rows):
 def migrate_log_history(log_root: Path, csv_path: Path):
     if csv_path.exists() and csv_path.stat().st_size > 0:
         existing = load_experiment_rows(csv_path)
-        if existing and "mode" in existing[0]:
+        if existing and "mode" in existing[0] and "trainable_part" in existing[0]:
             return existing
 
     rows = []
@@ -261,6 +296,7 @@ def migrate_log_history(log_root: Path, csv_path: Path):
                 "epochs": parsed["epochs"],
                 "learning_rate": parsed["learning_rate"],
                 "memory_size": parsed["memory_size"],
+                "trainable_part": parsed.get("trainable_part", ""),
                 "stage1_total": parsed["stage1_total"],
                 "stage2_total": parsed["stage2_total"],
                 "stage3_total": parsed["stage3_total"],

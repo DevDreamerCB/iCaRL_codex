@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from export_metrics import append_experiment_row, parse_single_log, write_latest_md, load_experiment_rows
+from export_metrics import append_experiment_row, parse_run_dir, write_latest_md, load_experiment_rows
 
 
 def query_gpus():
@@ -42,6 +42,17 @@ def choose_gpu(max_used_mb: int, max_util: int):
 def run_experiment(args):
     base_dir = Path(__file__).resolve().parent
     mode = "full" if args.full else "screen"
+    if args.full:
+        if args.seeds is None:
+            args.seeds = 3
+        if args.epochs is None:
+            args.epochs = 30
+    else:
+        if args.seeds is None:
+            args.seeds = 1
+        if args.epochs is None:
+            args.epochs = 10
+
     run_tag = args.run_tag or datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.note:
         run_tag = f"{run_tag}_{args.note}"
@@ -62,6 +73,7 @@ def run_experiment(args):
     env["ICARL_BALANCE_SAMPLE"] = "true" if args.balance_sample else "false"
     env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
     env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
+    env["ICARL_TRAINABLE_PART"] = args.trainable_part
 
     if args.lr is not None:
         env["ICARL_LR"] = str(args.lr)
@@ -84,11 +96,7 @@ def run_experiment(args):
         raise RuntimeError(f"No log directory found for run tag {run_tag}")
 
     log_dir = candidate_dirs[-1]
-    log_files = sorted(log_dir.glob("log_*.txt"))
-    if not log_files:
-        raise RuntimeError(f"No log file found under {log_dir}")
-
-    parsed = parse_single_log(log_files[-1])
+    parsed = parse_run_dir(log_dir)
     csv_path = base_dir / "metrics" / "experiments.csv"
     append_experiment_row(
         csv_path,
@@ -123,10 +131,11 @@ def main():
     parser.add_argument("--gpu", type=int)
     parser.add_argument("--max-used-mb", type=int, default=3000)
     parser.add_argument("--max-util", type=int, default=20)
-    parser.add_argument("--seeds", type=int, default=1)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--seeds", type=int)
+    parser.add_argument("--epochs", type=int)
     parser.add_argument("--memory-size", type=int, default=24)
     parser.add_argument("--lr", type=float)
+    parser.add_argument("--trainable-part", default="all")
     parser.add_argument("--use-contrastive", action="store_true")
     parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
     parser.set_defaults(use_contrastive=True)
