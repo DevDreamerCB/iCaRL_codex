@@ -40,6 +40,11 @@ def parse_single_log(log_path: Path):
 
             if "**********sub:" in line:
                 in_subject_block = True
+                continue
+
+            if "result end" in line:
+                in_subject_block = False
+                continue
 
             acc_match = FINAL_ACC_RE.search(line)
             if acc_match and current_stage is not None and not in_subject_block:
@@ -81,38 +86,34 @@ def find_logs(log_root: Path):
     return logs
 
 
-def write_csv(rows, csv_path: Path):
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "run_tag",
-        "epochs",
-        "learning_rate",
-        "memory_size",
-        "stage1_total",
-        "stage2_total",
-        "stage3_total",
-        "log_file",
-    ]
-    with csv_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+def stage_count(row):
+    return sum(1 for key in ("stage1_total", "stage2_total", "stage3_total") if row[key] != "")
+
+
+def compute_score(row):
+    s1 = float(row["stage1_total"]) if row["stage1_total"] != "" else 0.0
+    s2 = float(row["stage2_total"]) if row["stage2_total"] != "" else 0.0
+    s3 = float(row["stage3_total"]) if row["stage3_total"] != "" else 0.0
+    if row["stage3_total"] != "":
+        return round(0.2 * s1 + 0.3 * s2 + 0.5 * s3, 2)
+    if row["stage2_total"] != "":
+        return round(0.3 * s1 + 0.7 * s2, 2)
+    if row["stage1_total"] != "":
+        return round(s1, 2)
+    return ""
 
 
 def write_latest_md(rows, md_path: Path):
     md_path.parent.mkdir(parents=True, exist_ok=True)
-    def stage_count(row):
-        return sum(1 for key in ("stage1_total", "stage2_total", "stage3_total") if row[key] != "")
-
     complete_rows = [r for r in rows if r["stage3_total"] != ""]
     if complete_rows:
         latest = complete_rows[-1]
     elif rows:
-        max_stage_count = max(stage_count(r) for r in rows)
-        latest = [r for r in rows if stage_count(r) == max_stage_count][-1]
+        max_stage = max(stage_count(r) for r in rows)
+        latest = [r for r in rows if stage_count(r) == max_stage][-1]
     else:
         latest = None
+
     lines = ["# Latest Metrics", ""]
     if latest is None:
         lines.append("No completed logs found.")
@@ -120,30 +121,160 @@ def write_latest_md(rows, md_path: Path):
         lines.extend(
             [
                 f"- run tag: `{latest['run_tag']}`",
-                f"- epochs: `{latest['epochs']}`",
-                f"- learning rate: `{latest['learning_rate']}`",
-                f"- memory size: `{latest['memory_size']}`",
+                f"- epochs: `{latest.get('epochs', '')}`",
+                f"- seeds: `{latest.get('seeds', '')}`",
+                f"- gpu: `{latest.get('gpu', '')}`",
+                f"- note: `{latest.get('note', '')}`",
                 f"- task1 / stage1 total: `{latest['stage1_total']}`",
                 f"- task2 / stage2 total: `{latest['stage2_total']}`",
                 f"- task3 / stage3 total: `{latest['stage3_total']}`",
+                f"- score: `{latest.get('score', '')}`",
                 f"- log: `{latest['log_file']}`",
             ]
         )
 
         if complete_rows:
-            best = max(complete_rows, key=lambda r: float(r["stage3_total"]))
+            best = max(complete_rows, key=lambda r: float(r.get("score", -1) or -1))
             lines.extend(
                 [
                     "",
-                    "## Best Stage3 So Far",
+                    "## Best Completed Run So Far",
                     f"- run tag: `{best['run_tag']}`",
-                    f"- stage3 total: `{best['stage3_total']}`",
-                    f"- stage2 total: `{best['stage2_total']}`",
-                    f"- stage1 total: `{best['stage1_total']}`",
+                    f"- note: `{best.get('note', '')}`",
+                    f"- task3 total: `{best['stage3_total']}`",
+                    f"- task2 total: `{best['stage2_total']}`",
+                    f"- task1 total: `{best['stage1_total']}`",
+                    f"- score: `{best.get('score', '')}`",
                 ]
             )
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def append_experiment_row(
+    csv_path: Path,
+    parsed_row: dict,
+    *,
+    mode: str = "",
+    gpu: str = "",
+    seeds: str = "",
+    note: str = "",
+    hypothesis: str = "",
+    change_summary: str = "",
+    status: str = "",
+):
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "run_tag",
+        "mode",
+        "gpu",
+        "seeds",
+        "epochs",
+        "learning_rate",
+        "memory_size",
+        "stage1_total",
+        "stage2_total",
+        "stage3_total",
+        "score",
+        "status",
+        "note",
+        "hypothesis",
+        "change_summary",
+        "log_file",
+    ]
+
+    row = {
+        "run_tag": parsed_row["run_tag"],
+        "mode": mode,
+        "gpu": gpu,
+        "seeds": seeds,
+        "epochs": parsed_row.get("epochs", ""),
+        "learning_rate": parsed_row.get("learning_rate", ""),
+        "memory_size": parsed_row.get("memory_size", ""),
+        "stage1_total": parsed_row.get("stage1_total", ""),
+        "stage2_total": parsed_row.get("stage2_total", ""),
+        "stage3_total": parsed_row.get("stage3_total", ""),
+        "score": compute_score(parsed_row),
+        "status": status,
+        "note": note,
+        "hypothesis": hypothesis,
+        "change_summary": change_summary,
+        "log_file": parsed_row.get("log_file", ""),
+    }
+
+    needs_header = not csv_path.exists() or csv_path.stat().st_size == 0
+    with csv_path.open("a", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if needs_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def load_experiment_rows(csv_path: Path):
+    if not csv_path.exists():
+        return []
+    with csv_path.open("r", encoding="utf-8", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def write_experiment_rows(csv_path: Path, rows):
+    fieldnames = [
+        "run_tag",
+        "mode",
+        "gpu",
+        "seeds",
+        "epochs",
+        "learning_rate",
+        "memory_size",
+        "stage1_total",
+        "stage2_total",
+        "stage3_total",
+        "score",
+        "status",
+        "note",
+        "hypothesis",
+        "change_summary",
+        "log_file",
+    ]
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def migrate_log_history(log_root: Path, csv_path: Path):
+    if csv_path.exists() and csv_path.stat().st_size > 0:
+        existing = load_experiment_rows(csv_path)
+        if existing and "mode" in existing[0]:
+            return existing
+
+    rows = []
+    for parsed in [parse_single_log(p) for p in find_logs(log_root)]:
+        rows.append(
+            {
+                "run_tag": parsed["run_tag"],
+                "mode": "legacy",
+                "gpu": "",
+                "seeds": "",
+                "epochs": parsed["epochs"],
+                "learning_rate": parsed["learning_rate"],
+                "memory_size": parsed["memory_size"],
+                "stage1_total": parsed["stage1_total"],
+                "stage2_total": parsed["stage2_total"],
+                "stage3_total": parsed["stage3_total"],
+                "score": compute_score(parsed),
+                "status": "legacy",
+                "note": "migrated from existing log",
+                "hypothesis": "",
+                "change_summary": "",
+                "log_file": parsed["log_file"],
+            }
+        )
+
+    write_experiment_rows(csv_path, rows)
+    return rows
 
 
 def main():
@@ -155,10 +286,10 @@ def main():
 
     base_dir = Path(__file__).resolve().parent
     log_root = base_dir / args.log_root
-    rows = [parse_single_log(p) for p in find_logs(log_root)]
-    write_csv(rows, base_dir / args.csv)
+    csv_path = base_dir / args.csv
+    rows = migrate_log_history(log_root, csv_path)
     write_latest_md(rows, base_dir / args.latest_md)
-    print(f"Exported {len(rows)} runs to {(base_dir / args.csv)}")
+    print(f"Prepared metrics files at {csv_path}")
 
 
 if __name__ == "__main__":

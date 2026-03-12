@@ -2,3 +2,4 @@ __pycache__/
 logs/
 tensorboard_logs/
 *.pyc
+metrics/last_run_stdout.log

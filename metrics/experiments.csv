@@ -1,3 +1,5 @@
-run_tag,epochs,learning_rate,memory_size,stage1_total,stage2_total,stage3_total,log_file
-20260312_161759,30,0.001,24,86.11,59.95,,20260312_161759/log_MIRepNet_EA_2026-03-12_08_17_59.txt
-20260312_163650_envtest,1,0.001,24,,,,20260312_163650_envtest/log_MIRepNet_EA_2026-03-12_08_36_50.txt
+run_tag,mode,gpu,seeds,epochs,learning_rate,memory_size,stage1_total,stage2_total,stage3_total,score,status,note,hypothesis,change_summary,log_file
+20260312_161759,legacy,,,30,0.001,24,86.11,59.95,,67.8,legacy,migrated from existing log,,,20260312_161759/log_MIRepNet_EA_2026-03-12_08_17_59.txt
+20260312_163650_envtest,legacy,,,1,0.001,24,,,,,legacy,migrated from existing log,,,20260312_163650_envtest/log_MIRepNet_EA_2026-03-12_08_36_50.txt
+20260312_172758_20260312_172749_baseline_short,screen,0,1,10,0.001,24,87.5,54.55,38.66,53.19,completed,baseline_short,screen baseline under 1-seed 10-epoch setting,no code change,20260312_172758_20260312_172749_baseline_short/log_MIRepNet_EA_2026-03-12_09_27_58.txt
+20260312_173040_20260312_173035_no_contrastive_short,screen,0,1,10,0.001,24,85.42,54.09,39.74,53.18,completed,no_contrastive_short,contrastive loss may be hurting later tasks in this EEG continual setting,"disable supervised contrastive loss, keep other defaults",20260312_173040_20260312_173035_no_contrastive_short/log_MIRepNet_EA_2026-03-12_09_30_40.txt

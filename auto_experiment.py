@@ -1,0 +1,146 @@
+import argparse
+import os
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
+from export_metrics import append_experiment_row, parse_single_log, write_latest_md, load_experiment_rows
+
+
+def query_gpus():
+    cmd = [
+        "nvidia-smi",
+        "--query-gpu=index,memory.used,memory.total,utilization.gpu",
+        "--format=csv,noheader,nounits",
+    ]
+    out = subprocess.check_output(cmd, text=True)
+    gpus = []
+    for line in out.strip().splitlines():
+        idx, used, total, util = [x.strip() for x in line.split(",")]
+        gpus.append(
+            {
+                "index": int(idx),
+                "memory_used": int(used),
+                "memory_total": int(total),
+                "util": int(util),
+            }
+        )
+    return gpus
+
+
+def choose_gpu(max_used_mb: int, max_util: int):
+    gpus = query_gpus()
+    candidates = [
+        g for g in gpus if g["memory_used"] <= max_used_mb and g["util"] <= max_util
+    ]
+    if not candidates:
+        candidates = sorted(gpus, key=lambda g: (g["memory_used"], g["util"]))
+        return candidates[0]
+    return sorted(candidates, key=lambda g: (g["memory_used"], g["util"]))[0]
+
+
+def run_experiment(args):
+    base_dir = Path(__file__).resolve().parent
+    mode = "full" if args.full else "screen"
+    run_tag = args.run_tag or datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.note:
+        run_tag = f"{run_tag}_{args.note}"
+
+    if args.gpu is None:
+        gpu_info = choose_gpu(args.max_used_mb, args.max_util)
+        gpu_id = gpu_info["index"]
+    else:
+        gpu_info = None
+        gpu_id = args.gpu
+
+    env = os.environ.copy()
+    env["ICARL_GPU_ID"] = str(gpu_id)
+    env["ICARL_NUM_SEEDS"] = str(args.seeds)
+    env["ICARL_EPOCHS"] = str(args.epochs)
+    env["ICARL_RUN_TAG"] = run_tag
+    env["ICARL_USE_CONTRASTIVE"] = "true" if args.use_contrastive else "false"
+    env["ICARL_BALANCE_SAMPLE"] = "true" if args.balance_sample else "false"
+    env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
+    env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
+
+    if args.lr is not None:
+        env["ICARL_LR"] = str(args.lr)
+
+    log_capture = base_dir / "metrics" / "last_run_stdout.log"
+    with log_capture.open("w", encoding="utf-8") as f:
+        subprocess.run(
+            ["python", "main.py"],
+            cwd=base_dir,
+            env=env,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+
+    candidate_dirs = sorted(
+        [p for p in (base_dir / "logs").iterdir() if p.is_dir() and p.name.endswith(run_tag)]
+    )
+    if not candidate_dirs:
+        raise RuntimeError(f"No log directory found for run tag {run_tag}")
+
+    log_dir = candidate_dirs[-1]
+    log_files = sorted(log_dir.glob("log_*.txt"))
+    if not log_files:
+        raise RuntimeError(f"No log file found under {log_dir}")
+
+    parsed = parse_single_log(log_files[-1])
+    csv_path = base_dir / "metrics" / "experiments.csv"
+    append_experiment_row(
+        csv_path,
+        parsed,
+        mode=mode,
+        gpu=str(gpu_id),
+        seeds=str(args.seeds),
+        note=args.note,
+        hypothesis=args.hypothesis,
+        change_summary=args.change_summary,
+        status="completed",
+    )
+    rows = load_experiment_rows(csv_path)
+    write_latest_md(rows, base_dir / "metrics" / "latest.md")
+
+    print(f"run_tag={run_tag}")
+    print(f"gpu={gpu_id}")
+    if gpu_info is not None:
+        print(f"gpu_memory_used_mb={gpu_info['memory_used']}")
+        print(f"gpu_util={gpu_info['util']}")
+    print(f"stage1_total={parsed['stage1_total']}")
+    print(f"stage2_total={parsed['stage2_total']}")
+    print(f"stage3_total={parsed['stage3_total']}")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--note", default="")
+    parser.add_argument("--hypothesis", default="")
+    parser.add_argument("--change-summary", default="")
+    parser.add_argument("--run-tag", default="")
+    parser.add_argument("--gpu", type=int)
+    parser.add_argument("--max-used-mb", type=int, default=3000)
+    parser.add_argument("--max-util", type=int, default=20)
+    parser.add_argument("--seeds", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--memory-size", type=int, default=24)
+    parser.add_argument("--lr", type=float)
+    parser.add_argument("--use-contrastive", action="store_true")
+    parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
+    parser.set_defaults(use_contrastive=True)
+    parser.add_argument("--balance-sample", action="store_true")
+    parser.add_argument("--no-balance-sample", dest="balance_sample", action="store_false")
+    parser.set_defaults(balance_sample=True)
+    parser.add_argument("--use-align", action="store_true")
+    parser.add_argument("--no-use-align", dest="use_align", action="store_false")
+    parser.set_defaults(use_align=True)
+    parser.add_argument("--full", action="store_true")
+    args = parser.parse_args()
+
+    run_experiment(args)
+
+
+if __name__ == "__main__":
+    main()
