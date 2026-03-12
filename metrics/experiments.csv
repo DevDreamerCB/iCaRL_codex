@@ -1,0 +1,3 @@
+run_tag,epochs,learning_rate,memory_size,stage1_total,stage2_total,stage3_total,log_file
+20260312_161759,30,0.001,24,86.11,59.95,,20260312_161759/log_MIRepNet_EA_2026-03-12_08_17_59.txt
+20260312_163650_envtest,1,0.001,24,,,,20260312_163650_envtest/log_MIRepNet_EA_2026-03-12_08_36_50.txt

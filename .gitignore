@@ -1,0 +1,4 @@
+__pycache__/
+logs/
+tensorboard_logs/
+*.pyc
