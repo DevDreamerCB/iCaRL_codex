@@ -74,6 +74,8 @@ def run_experiment(args):
     env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
     env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
     env["ICARL_TRAINABLE_PART"] = args.trainable_part
+    env["ICARL_USE_PROTO_ALIGN"] = "true" if args.use_proto_align else "false"
+    env["ICARL_PROTO_ALIGN_LAMBDA"] = str(args.proto_align_lambda)
 
     if args.lr is not None:
         env["ICARL_LR"] = str(args.lr)
@@ -136,6 +138,10 @@ def main():
     parser.add_argument("--memory-size", type=int, default=24)
     parser.add_argument("--lr", type=float)
     parser.add_argument("--trainable-part", default="all")
+    parser.add_argument("--use-proto-align", action="store_true")
+    parser.add_argument("--no-use-proto-align", dest="use_proto_align", action="store_false")
+    parser.set_defaults(use_proto_align=False)
+    parser.add_argument("--proto-align-lambda", type=float, default=0.1)
     parser.add_argument("--use-contrastive", action="store_true")
     parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
     parser.set_defaults(use_contrastive=True)

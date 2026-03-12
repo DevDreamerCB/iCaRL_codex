@@ -111,6 +111,8 @@ is_align = _get_env_bool('ICARL_USE_ALIGN', True)
 
 weighted_crossentropy = _get_env_bool('ICARL_WEIGHTED_CE', False)
 trainable_part = _get_env_str('ICARL_TRAINABLE_PART', 'all')
+use_proto_align = _get_env_bool('ICARL_USE_PROTO_ALIGN', False)
+proto_align_lambda = _get_env_float('ICARL_PROTO_ALIGN_LAMBDA', 0.1)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -131,7 +133,8 @@ for seed in range(1, num_seeds+1):
 
     state_log = f'Replay memory size:{memory_size}, learning_rate:{learning_rate}, epochs:{epochs}, \
         is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, is_contrastive_loss:{is_contrastive_loss},\
-            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}'
+            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}, \
+                use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}'
     log.record(state_log)
     print(state_log)
 
@@ -142,6 +145,7 @@ for seed in range(1, num_seeds+1):
     model=CBiCaRL(seed,result_dir, data_path, is_cross_session, numclass,\
         feature_extractor,batch_size,\
         memory_size, balance_sample,is_contrastive_loss, lambda_contrastive_loss, temperature, \
+        use_proto_align, proto_align_lambda, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy,\
         epochs,learning_rate,is_align,log,current_date)
 

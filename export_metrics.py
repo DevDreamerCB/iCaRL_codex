@@ -13,6 +13,7 @@ STATE_RE = re.compile(
     r"Replay memory size:(?P<memory>\d+), learning_rate:(?P<lr>[0-9.]+), epochs:(?P<epochs>\d+),"
 )
 TRAINABLE_RE = re.compile(r"trainable_part\s*=\s*(?P<trainable>[A-Za-z_]+)")
+PROTO_ALIGN_RE = re.compile(r"use_proto_align\s*=\s*(?P<enabled>True|False),\s*proto_align_lambda\s*=\s*(?P<lam>[0-9.]+)")
 
 
 def parse_single_log(log_path: Path):
@@ -20,7 +21,14 @@ def parse_single_log(log_path: Path):
     current_stage = None
     pending_stage_total = None
     in_subject_block = False
-    config = {"memory_size": "", "learning_rate": "", "epochs": "", "trainable_part": ""}
+    config = {
+        "memory_size": "",
+        "learning_rate": "",
+        "epochs": "",
+        "trainable_part": "",
+        "use_proto_align": "",
+        "proto_align_lambda": "",
+    }
 
     with log_path.open("r", encoding="utf-8") as f:
         for raw_line in f:
@@ -34,6 +42,10 @@ def parse_single_log(log_path: Path):
             trainable_match = TRAINABLE_RE.search(line)
             if trainable_match:
                 config["trainable_part"] = trainable_match.group("trainable")
+            proto_align_match = PROTO_ALIGN_RE.search(line)
+            if proto_align_match:
+                config["use_proto_align"] = proto_align_match.group("enabled")
+                config["proto_align_lambda"] = proto_align_match.group("lam")
 
             stage_match = STAGE_START_RE.search(line)
             if stage_match:
@@ -72,6 +84,8 @@ def parse_single_log(log_path: Path):
         "learning_rate": config["learning_rate"],
         "memory_size": config["memory_size"],
         "trainable_part": config["trainable_part"],
+        "use_proto_align": config["use_proto_align"],
+        "proto_align_lambda": config["proto_align_lambda"],
         "stage1_total": stage_totals.get(1, ""),
         "stage2_total": stage_totals.get(2, ""),
         "stage3_total": stage_totals.get(3, ""),
@@ -98,6 +112,8 @@ def parse_run_dir(log_dir: Path):
         "learning_rate": parsed_logs[-1].get("learning_rate", ""),
         "memory_size": parsed_logs[-1].get("memory_size", ""),
         "trainable_part": parsed_logs[-1].get("trainable_part", ""),
+        "use_proto_align": parsed_logs[-1].get("use_proto_align", ""),
+        "proto_align_lambda": parsed_logs[-1].get("proto_align_lambda", ""),
         "stage1_total": mean_stage("stage1_total"),
         "stage2_total": mean_stage("stage2_total"),
         "stage3_total": mean_stage("stage3_total"),
@@ -157,6 +173,7 @@ def write_latest_md(rows, md_path: Path):
                 f"- gpu: `{latest.get('gpu', '')}`",
                 f"- note: `{latest.get('note', '')}`",
                 f"- trainable part: `{latest.get('trainable_part', '')}`",
+                f"- proto align: `{latest.get('use_proto_align', '')}` @ `{latest.get('proto_align_lambda', '')}`",
                 f"- task1 / stage1 total: `{latest['stage1_total']}`",
                 f"- task2 / stage2 total: `{latest['stage2_total']}`",
                 f"- task3 / stage3 total: `{latest['stage3_total']}`",
@@ -205,6 +222,8 @@ def append_experiment_row(
         "learning_rate",
         "memory_size",
         "trainable_part",
+        "use_proto_align",
+        "proto_align_lambda",
         "stage1_total",
         "stage2_total",
         "stage3_total",
@@ -225,6 +244,8 @@ def append_experiment_row(
         "learning_rate": parsed_row.get("learning_rate", ""),
         "memory_size": parsed_row.get("memory_size", ""),
         "trainable_part": parsed_row.get("trainable_part", ""),
+        "use_proto_align": parsed_row.get("use_proto_align", ""),
+        "proto_align_lambda": parsed_row.get("proto_align_lambda", ""),
         "stage1_total": parsed_row.get("stage1_total", ""),
         "stage2_total": parsed_row.get("stage2_total", ""),
         "stage3_total": parsed_row.get("stage3_total", ""),
@@ -261,6 +282,8 @@ def write_experiment_rows(csv_path: Path, rows):
         "learning_rate",
         "memory_size",
         "trainable_part",
+        "use_proto_align",
+        "proto_align_lambda",
         "stage1_total",
         "stage2_total",
         "stage3_total",
@@ -282,7 +305,7 @@ def write_experiment_rows(csv_path: Path, rows):
 def migrate_log_history(log_root: Path, csv_path: Path):
     if csv_path.exists() and csv_path.stat().st_size > 0:
         existing = load_experiment_rows(csv_path)
-        if existing and "mode" in existing[0] and "trainable_part" in existing[0]:
+        if existing and "mode" in existing[0] and "trainable_part" in existing[0] and "use_proto_align" in existing[0]:
             return existing
 
     rows = []
@@ -297,6 +320,8 @@ def migrate_log_history(log_root: Path, csv_path: Path):
                 "learning_rate": parsed["learning_rate"],
                 "memory_size": parsed["memory_size"],
                 "trainable_part": parsed.get("trainable_part", ""),
+                "use_proto_align": parsed.get("use_proto_align", ""),
+                "proto_align_lambda": parsed.get("proto_align_lambda", ""),
                 "stage1_total": parsed["stage1_total"],
                 "stage2_total": parsed["stage2_total"],
                 "stage3_total": parsed["stage3_total"],

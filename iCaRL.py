@@ -26,6 +26,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class CBiCaRL:
     def __init__(self, seed, result_dir, data_path, is_cross_session, numclass, feature_extractor, \
         batch_size, memory_size, balance_sample, is_contrastive_loss, lambda_contrastive_loss, temperature,\
+        use_proto_align, proto_align_lambda, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy, \
             epochs, learning_rate, is_align, log, current_date):
         super().__init__()
@@ -58,6 +59,9 @@ class CBiCaRL:
         self.is_contrastive_loss = is_contrastive_loss
         self.lambda_contrastive_loss = lambda_contrastive_loss
         self.temperature = temperature
+        self.use_proto_align = use_proto_align
+        self.proto_align_lambda = proto_align_lambda
+        self.old_class_prototypes = None
 
         # LwF参数
         self.prev_model = None
@@ -108,7 +112,14 @@ class CBiCaRL:
             self.prev_model.eval()
             for p in self.prev_model.parameters():
                 p.requires_grad = False
+            if len(self.class_mean_set) > 0:
+                old_prototypes = torch.tensor(np.array(self.class_mean_set), dtype=torch.float32)
+                self.old_class_prototypes = F.normalize(old_prototypes, p=2, dim=1).to(device)
+            else:
+                self.old_class_prototypes = None
             self.model.Incremental_learning(self.numclass)
+        else:
+            self.old_class_prototypes = None
         self.model.train()
         self.model.to(device)
         
@@ -281,6 +292,10 @@ class CBiCaRL:
                 else:
                     loss = loss_bce
 
+                if self.use_proto_align and self.old_class_prototypes is not None:
+                    loss_proto = self.prototype_alignment_loss(features, y, self.old_class_prototypes)
+                    loss = loss + self.proto_align_lambda * loss_proto
+
                 optimizer.zero_grad()
                 loss.backward()
 
@@ -307,6 +322,18 @@ class CBiCaRL:
             # 记录当前epoch的loss到TensorBoard
             writer.add_scalar('Loss/train_epoch', epoch_train_loss, epoch)
             writer.add_scalar('Acc/val', overall_acc, epoch)
+
+    def prototype_alignment_loss(self, features, labels, prototypes):
+        old_class_count = prototypes.size(0)
+        old_mask = labels < old_class_count
+        if old_mask.sum().item() == 0:
+            return torch.tensor(0.0, device=features.device)
+
+        old_features = F.normalize(features[old_mask], p=2, dim=1)
+        old_labels = labels[old_mask]
+        target_proto = prototypes[old_labels]
+        cosine = F.cosine_similarity(old_features, target_proto, dim=1)
+        return (1.0 - cosine).mean()
 
     def supervised_contrastive_loss(self, features, labels, temperature=0.07):
         """
@@ -881,4 +908,3 @@ class CBiCaRL:
     #     self.idx_perclass += 1
         
     #     return A_current_stage
-
