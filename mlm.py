@@ -12,9 +12,10 @@ import math
 
 
 class TaskEmbeddingAdapter(nn.Module):
-    def __init__(self, emb_size, adapter_dim=32, num_tasks=3, dropout=0.1):
+    def __init__(self, emb_size, adapter_dim=32, num_tasks=3, dropout=0.1, start_task=0):
         super().__init__()
         self.num_tasks = num_tasks
+        self.start_task = start_task
         self.current_task = 0
         self.norm = nn.LayerNorm(emb_size)
         self.down = nn.ModuleList([nn.Linear(emb_size, adapter_dim) for _ in range(num_tasks)])
@@ -30,6 +31,8 @@ class TaskEmbeddingAdapter(nn.Module):
         self.current_task = max(0, min(int(task_id), self.num_tasks - 1))
 
     def forward(self, x):
+        if self.current_task < self.start_task:
+            return x
         x_norm = self.norm(x)
         hidden = self.down[self.current_task](x_norm)
         hidden = self.act(hidden)
@@ -154,7 +157,7 @@ class decoder_fft(nn.Module):
 
 class mlm_mask(nn.Module):  
     def __init__(self, emb_size=128, depth=6, n_classes=2,mask_ratio=0.5, pretrain=None,pretrainmode=False,
-                 use_task_adapter=False, adapter_dim=32, num_tasks=3):
+                 use_task_adapter=False, adapter_dim=32, num_tasks=3, adapter_start_task=0):
         super().__init__()
         self.pretrainmode = pretrainmode
         self.embedding = PatchEmbedding(embed_dim=emb_size)
@@ -164,7 +167,12 @@ class mlm_mask(nn.Module):
         self.feature_dim = emb_size
         self.use_task_adapter = use_task_adapter
         self.current_task = 0
-        self.task_adapter = TaskEmbeddingAdapter(emb_size, adapter_dim=adapter_dim, num_tasks=num_tasks) if use_task_adapter else None
+        self.task_adapter = TaskEmbeddingAdapter(
+            emb_size,
+            adapter_dim=adapter_dim,
+            num_tasks=num_tasks,
+            start_task=adapter_start_task,
+        ) if use_task_adapter else None
         if pretrain is not None:
             self.init_from_pretrained(pretrain)
         

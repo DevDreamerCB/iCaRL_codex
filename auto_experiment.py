@@ -78,6 +78,7 @@ def run_experiment(args):
     env["ICARL_PROTO_ALIGN_LAMBDA"] = str(args.proto_align_lambda)
     env["ICARL_USE_TASK_ADAPTER"] = "true" if args.use_task_adapter else "false"
     env["ICARL_TASK_ADAPTER_DIM"] = str(args.task_adapter_dim)
+    env["ICARL_TASK_ADAPTER_START_TASK"] = str(args.task_adapter_start_task)
 
     if args.lr is not None:
         env["ICARL_LR"] = str(args.lr)
@@ -148,6 +149,7 @@ def main():
     parser.add_argument("--no-use-task-adapter", dest="use_task_adapter", action="store_false")
     parser.set_defaults(use_task_adapter=False)
     parser.add_argument("--task-adapter-dim", type=int, default=32)
+    parser.add_argument("--task-adapter-start-task", type=int, default=0)
     parser.add_argument("--use-contrastive", action="store_true")
     parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
     parser.set_defaults(use_contrastive=True)

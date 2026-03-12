@@ -1,22 +1,22 @@
 # Latest Metrics
 
-- run tag: `20260312_205921_20260312_205914_no_contrastive_adapter_short`
+- run tag: `20260312_210720_20260312_210716_no_contrastive_adapter16_s2_short`
 - epochs: `10`
 - seeds: `1`
-- gpu: `4`
-- note: `no_contrastive_adapter_short`
+- gpu: `3`
+- note: `no_contrastive_adapter16_s2_short`
 - trainable part: `all`
 - proto align: `False` @ `0.1`
-- task1 / stage1 total: `85.19`
-- task2 / stage2 total: `56.17`
-- task3 / stage3 total: `41.05`
-- score: `54.41`
-- log: `20260312_205921_20260312_205914_no_contrastive_adapter_short/log_MIRepNet_EA_2026-03-12_12_59_21.txt`
+- task1 / stage1 total: `86.11`
+- task2 / stage2 total: `56.33`
+- task3 / stage3 total: `43.44`
+- score: `55.84`
+- log: `20260312_210720_20260312_210716_no_contrastive_adapter16_s2_short/log_MIRepNet_EA_2026-03-12_13_07_20.txt`
 
 ## Best Completed Run So Far
-- run tag: `20260312_204445_20260312_204440_no_contrastive_confirm`
-- note: `no_contrastive_confirm`
-- task3 total: `40.24`
-- task2 total: `60.78`
-- task1 total: `85.8`
-- score: `55.51`
+- run tag: `20260312_210720_20260312_210716_no_contrastive_adapter16_s2_short`
+- note: `no_contrastive_adapter16_s2_short`
+- task3 total: `43.44`
+- task2 total: `56.33`
+- task1 total: `86.11`
+- score: `55.84`
