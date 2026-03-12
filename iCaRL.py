@@ -27,6 +27,7 @@ class CBiCaRL:
     def __init__(self, seed, result_dir, data_path, is_cross_session, numclass, feature_extractor, \
         batch_size, memory_size, balance_sample, is_contrastive_loss, lambda_contrastive_loss, temperature,\
         use_proto_align, proto_align_lambda, \
+        task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy, \
             epochs, learning_rate, is_align, log, current_date):
         super().__init__()
@@ -61,6 +62,7 @@ class CBiCaRL:
         self.temperature = temperature
         self.use_proto_align = use_proto_align
         self.proto_align_lambda = proto_align_lambda
+        self.task_adapter_lr_mult = task_adapter_lr_mult
         self.old_class_prototypes = None
 
         # LwF参数
@@ -247,11 +249,31 @@ class CBiCaRL:
         
         # input(' ')
 
-        optimizer = optim.Adam(
-            filter(lambda p: p.requires_grad, self.model.parameters()),
-            lr=self.learning_rate,
-            weight_decay=0.0001
-        )
+        adapter_params = []
+        base_params = []
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if 'task_adapter' in name:
+                adapter_params.append(param)
+            else:
+                base_params.append(param)
+
+        param_groups = []
+        if base_params:
+            param_groups.append({
+                'params': base_params,
+                'lr': self.learning_rate,
+                'weight_decay': 0.0001,
+            })
+        if adapter_params:
+            param_groups.append({
+                'params': adapter_params,
+                'lr': self.learning_rate * self.task_adapter_lr_mult,
+                'weight_decay': 0.0001,
+            })
+
+        optimizer = optim.Adam(param_groups)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer, T_0=self.epochs, T_mult=1, eta_min=1e-6

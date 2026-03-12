@@ -116,6 +116,7 @@ proto_align_lambda = _get_env_float('ICARL_PROTO_ALIGN_LAMBDA', 0.1)
 use_task_adapter = _get_env_bool('ICARL_USE_TASK_ADAPTER', False)
 task_adapter_dim = _get_env_int('ICARL_TASK_ADAPTER_DIM', 32)
 task_adapter_start_task = _get_env_int('ICARL_TASK_ADAPTER_START_TASK', 0)
+task_adapter_lr_mult = _get_env_float('ICARL_TASK_ADAPTER_LR_MULT', 1.0)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -139,7 +140,7 @@ for seed in range(1, num_seeds+1):
             lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}, \
                 use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, \
                     use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}, \
-                        task_adapter_start_task = {task_adapter_start_task}'
+                        task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}'
     log.record(state_log)
     print(state_log)
 
@@ -161,6 +162,7 @@ for seed in range(1, num_seeds+1):
         feature_extractor,batch_size,\
         memory_size, balance_sample,is_contrastive_loss, lambda_contrastive_loss, temperature, \
         use_proto_align, proto_align_lambda, \
+        task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy,\
         epochs,learning_rate,is_align,log,current_date)
 
