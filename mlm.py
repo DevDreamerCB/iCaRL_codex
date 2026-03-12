@@ -39,18 +39,72 @@ class TaskEmbeddingAdapter(nn.Module):
         hidden = self.dropout(hidden)
         return x + self.up[self.current_task](hidden)
 
+
+class SharedEmbeddingAdapter(nn.Module):
+    def __init__(self, emb_size, adapter_dim=32, dropout=0.1, start_task=0):
+        super().__init__()
+        self.start_task = start_task
+        self.current_task = 0
+        self.norm = nn.LayerNorm(emb_size)
+        self.down = nn.Linear(emb_size, adapter_dim)
+        self.up = nn.Linear(adapter_dim, emb_size)
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(dropout)
+
+        nn.init.zeros_(self.up.weight)
+        nn.init.zeros_(self.up.bias)
+
+    def set_current_task(self, task_id):
+        self.current_task = int(task_id)
+
+    def forward(self, x):
+        if self.current_task < self.start_task:
+            return x
+        x_norm = self.norm(x)
+        hidden = self.down(x_norm)
+        hidden = self.act(hidden)
+        hidden = self.dropout(hidden)
+        return x + self.up(hidden)
+
+
+class TaskPromptPool(nn.Module):
+    def __init__(self, emb_size, prompt_len=4, num_tasks=3, start_task=0):
+        super().__init__()
+        self.prompt_len = prompt_len
+        self.num_tasks = num_tasks
+        self.start_task = start_task
+        self.current_task = 0
+        self.prompts = nn.Parameter(torch.zeros(num_tasks, prompt_len, emb_size))
+        nn.init.normal_(self.prompts, mean=0.0, std=0.02)
+
+    def set_current_task(self, task_id):
+        self.current_task = max(0, min(int(task_id), self.num_tasks - 1))
+
+    def forward(self, x):
+        if self.current_task < self.start_task:
+            return x
+        prompt = self.prompts[self.current_task].unsqueeze(0).expand(x.size(0), -1, -1)
+        return torch.cat([prompt, x], dim=1)
+
 class PatchEmbedding(nn.Module):
-    def __init__(self, embed_dim=128, num_channels=45, use_task_affine=False, num_tasks=3, affine_start_task=0):
+    def __init__(self, embed_dim=128, num_channels=45, use_task_affine=False, num_tasks=3, affine_start_task=0,
+                 use_task_bn=False, bn_start_task=0):
         super().__init__()
 
         self.num_channels = num_channels
         self.embed_dim = embed_dim
         self.use_task_affine = use_task_affine
         self.affine_start_task = affine_start_task
+        self.use_task_bn = use_task_bn
+        self.bn_start_task = bn_start_task
         self.current_task = 0
         self.conv1 = nn.Conv2d(1, 64, kernel_size=(1, 25), stride=(1, 1))
         self.conv2 = nn.Conv2d(64, 128, kernel_size=(self.num_channels, 1), stride=(1, 1))
         self.bn = nn.BatchNorm2d(128)
+        if use_task_bn:
+            self.task_bn = nn.ModuleList([nn.BatchNorm2d(128) for _ in range(num_tasks)])
+        else:
+            self.task_bn = None
         self.elu = nn.ELU()
         self.pool = nn.AvgPool2d(kernel_size=(1, 75), stride=(1, 15))
         self.dropout = nn.Dropout(0.5)
@@ -76,7 +130,10 @@ class PatchEmbedding(nn.Module):
         x = self.conv1(x)
         
         x = self.conv2(x)
-        x = self.bn(x)
+        if self.use_task_bn and self.current_task >= self.bn_start_task:
+            x = self.task_bn[self.current_task](x)
+        else:
+            x = self.bn(x)
         if self.use_task_affine and self.current_task >= self.affine_start_task:
             scale = self.task_scale[self.current_task].view(1, -1, 1, 1)
             bias = self.task_bias[self.current_task].view(1, -1, 1, 1)
@@ -173,8 +230,11 @@ class decoder_fft(nn.Module):
 
 class mlm_mask(nn.Module):  
     def __init__(self, emb_size=128, depth=6, n_classes=2,mask_ratio=0.5, pretrain=None,pretrainmode=False,
-                 use_task_adapter=False, adapter_dim=32, num_tasks=3, adapter_start_task=0,
-                 use_task_affine=False, affine_start_task=0):
+                 use_task_adapter=False, adapter_dim=32, adapter_dropout=0.1, num_tasks=3, adapter_start_task=0,
+                 use_shared_adapter=False, shared_adapter_dim=16, shared_adapter_dropout=0.1, shared_adapter_start_task=0,
+                 use_task_prompt=False, task_prompt_len=4, task_prompt_start_task=0,
+                 use_task_affine=False, affine_start_task=0,
+                 use_task_bn=False, bn_start_task=0):
         super().__init__()
         self.pretrainmode = pretrainmode
         self.embedding = PatchEmbedding(
@@ -182,20 +242,38 @@ class mlm_mask(nn.Module):
             use_task_affine=use_task_affine,
             num_tasks=num_tasks,
             affine_start_task=affine_start_task,
+            use_task_bn=use_task_bn,
+            bn_start_task=bn_start_task,
         )
         self.transformer = TransformerEncoder(depth, emb_size,dropout=0.5)
         self.clshead = nn.Linear(emb_size,n_classes)
         self.mask_ratio = mask_ratio
         self.feature_dim = emb_size
         self.use_task_adapter = use_task_adapter
+        self.use_shared_adapter = use_shared_adapter
+        self.use_task_prompt = use_task_prompt
         self.use_task_affine = use_task_affine
+        self.use_task_bn = use_task_bn
         self.current_task = 0
+        self.shared_adapter = SharedEmbeddingAdapter(
+            emb_size,
+            adapter_dim=shared_adapter_dim,
+            dropout=shared_adapter_dropout,
+            start_task=shared_adapter_start_task,
+        ) if use_shared_adapter else None
         self.task_adapter = TaskEmbeddingAdapter(
             emb_size,
             adapter_dim=adapter_dim,
             num_tasks=num_tasks,
+            dropout=adapter_dropout,
             start_task=adapter_start_task,
         ) if use_task_adapter else None
+        self.task_prompt = TaskPromptPool(
+            emb_size,
+            prompt_len=task_prompt_len,
+            num_tasks=num_tasks,
+            start_task=task_prompt_start_task,
+        ) if use_task_prompt else None
         if pretrain is not None:
             self.init_from_pretrained(pretrain)
         
@@ -227,8 +305,12 @@ class mlm_mask(nn.Module):
 
     def forward(self, x):
         original_x = self.embedding(x) 
+        if self.shared_adapter is not None:
+            original_x = self.shared_adapter(original_x)
         if self.task_adapter is not None:
             original_x = self.task_adapter(original_x)
+        if self.task_prompt is not None:
+            original_x = self.task_prompt(original_x)
 
         if self.pretrainmode:
 
@@ -251,8 +333,12 @@ class mlm_mask(nn.Module):
     def set_current_task(self, task_id):
         self.current_task = int(task_id)
         self.embedding.set_current_task(task_id)
+        if self.shared_adapter is not None:
+            self.shared_adapter.set_current_task(task_id)
         if self.task_adapter is not None:
             self.task_adapter.set_current_task(task_id)
+        if self.task_prompt is not None:
+            self.task_prompt.set_current_task(task_id)
 
     def init_from_pretrained(self, pretrained_path, freeze_encoder=False, strict=True):
         pretrained_dict = torch.load(pretrained_path)
@@ -265,6 +351,11 @@ class mlm_mask(nn.Module):
         model_dict.update(pretrained_dict)
         
         self.load_state_dict(model_dict, strict=strict)
+
+        if self.embedding.task_bn is not None:
+            base_bn_state = self.embedding.bn.state_dict()
+            for task_bn in self.embedding.task_bn:
+                task_bn.load_state_dict(base_bn_state)
         
         if freeze_encoder:
             for name, param in self.named_parameters():

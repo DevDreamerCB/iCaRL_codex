@@ -115,10 +115,20 @@ use_proto_align = _get_env_bool('ICARL_USE_PROTO_ALIGN', False)
 proto_align_lambda = _get_env_float('ICARL_PROTO_ALIGN_LAMBDA', 0.1)
 use_task_adapter = _get_env_bool('ICARL_USE_TASK_ADAPTER', False)
 task_adapter_dim = _get_env_int('ICARL_TASK_ADAPTER_DIM', 32)
+task_adapter_dropout = _get_env_float('ICARL_TASK_ADAPTER_DROPOUT', 0.1)
 task_adapter_start_task = _get_env_int('ICARL_TASK_ADAPTER_START_TASK', 0)
 task_adapter_lr_mult = _get_env_float('ICARL_TASK_ADAPTER_LR_MULT', 1.0)
+use_shared_adapter = _get_env_bool('ICARL_USE_SHARED_ADAPTER', False)
+shared_adapter_dim = _get_env_int('ICARL_SHARED_ADAPTER_DIM', 16)
+shared_adapter_dropout = _get_env_float('ICARL_SHARED_ADAPTER_DROPOUT', 0.1)
+shared_adapter_start_task = _get_env_int('ICARL_SHARED_ADAPTER_START_TASK', 0)
+use_task_prompt = _get_env_bool('ICARL_USE_TASK_PROMPT', False)
+task_prompt_len = _get_env_int('ICARL_TASK_PROMPT_LEN', 4)
+task_prompt_start_task = _get_env_int('ICARL_TASK_PROMPT_START_TASK', 0)
 use_task_affine = _get_env_bool('ICARL_USE_TASK_AFFINE', False)
 task_affine_start_task = _get_env_int('ICARL_TASK_AFFINE_START_TASK', 0)
+use_task_bn = _get_env_bool('ICARL_USE_TASK_BN', False)
+task_bn_start_task = _get_env_int('ICARL_TASK_BN_START_TASK', 0)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -142,8 +152,13 @@ for seed in range(1, num_seeds+1):
             lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}, \
                 use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, \
                     use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}, \
-                        task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}, \
-                            use_task_affine = {use_task_affine}, task_affine_start_task = {task_affine_start_task}'
+                        task_adapter_dropout = {task_adapter_dropout}, task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}, \
+                            use_shared_adapter = {use_shared_adapter}, shared_adapter_dim = {shared_adapter_dim}, \
+                                shared_adapter_dropout = {shared_adapter_dropout}, shared_adapter_start_task = {shared_adapter_start_task}, \
+                                    use_task_prompt = {use_task_prompt}, task_prompt_len = {task_prompt_len}, \
+                                        task_prompt_start_task = {task_prompt_start_task}, \
+                            use_task_affine = {use_task_affine}, task_affine_start_task = {task_affine_start_task}, \
+                                use_task_bn = {use_task_bn}, task_bn_start_task = {task_bn_start_task}'
     log.record(state_log)
     print(state_log)
 
@@ -156,10 +171,20 @@ for seed in range(1, num_seeds+1):
         pretrainmode=False,
         use_task_adapter=use_task_adapter,
         adapter_dim=task_adapter_dim,
+        adapter_dropout=task_adapter_dropout,
         num_tasks=num_stages,
         adapter_start_task=task_adapter_start_task,
+        use_shared_adapter=use_shared_adapter,
+        shared_adapter_dim=shared_adapter_dim,
+        shared_adapter_dropout=shared_adapter_dropout,
+        shared_adapter_start_task=shared_adapter_start_task,
+        use_task_prompt=use_task_prompt,
+        task_prompt_len=task_prompt_len,
+        task_prompt_start_task=task_prompt_start_task,
         use_task_affine=use_task_affine,
         affine_start_task=task_affine_start_task,
+        use_task_bn=use_task_bn,
+        bn_start_task=task_bn_start_task,
     )
     _configure_trainable_params(feature_extractor, trainable_part)
 
