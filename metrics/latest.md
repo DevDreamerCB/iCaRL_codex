@@ -1,22 +1,22 @@
 # Latest Metrics
 
-- run tag: `20260312_202649_20260312_202645_proto_align_confirm`
+- run tag: `20260312_204445_20260312_204440_no_contrastive_confirm`
 - epochs: `30`
 - seeds: `3`
-- gpu: `4`
-- note: `proto_align_confirm`
+- gpu: `2`
+- note: `no_contrastive_confirm`
 - trainable part: `all`
-- proto align: `True` @ `0.1`
+- proto align: `False` @ `0.1`
 - task1 / stage1 total: `85.8`
-- task2 / stage2 total: `59.59`
-- task3 / stage3 total: `35.65`
-- score: `52.86`
-- log: `20260312_202649_20260312_202645_proto_align_confirm/log_MIRepNet_EA_2026-03-12_12_26_49.txt;20260312_202649_20260312_202645_proto_align_confirm/log_MIRepNet_EA_2026-03-12_12_30_10.txt;20260312_202649_20260312_202645_proto_align_confirm/log_MIRepNet_EA_2026-03-12_12_33_25.txt`
+- task2 / stage2 total: `60.78`
+- task3 / stage3 total: `40.24`
+- score: `55.51`
+- log: `20260312_204445_20260312_204440_no_contrastive_confirm/log_MIRepNet_EA_2026-03-12_12_44_45.txt;20260312_204445_20260312_204440_no_contrastive_confirm/log_MIRepNet_EA_2026-03-12_12_48_17.txt;20260312_204445_20260312_204440_no_contrastive_confirm/log_MIRepNet_EA_2026-03-12_12_51_26.txt`
 
 ## Best Completed Run So Far
-- run tag: `20260312_202309_20260312_202305_proto_align_short`
-- note: `proto_align_short`
-- task3 total: `41.74`
-- task2 total: `53.78`
-- task1 total: `87.5`
-- score: `54.5`
+- run tag: `20260312_204445_20260312_204440_no_contrastive_confirm`
+- note: `no_contrastive_confirm`
+- task3 total: `40.24`
+- task2 total: `60.78`
+- task1 total: `85.8`
+- score: `55.51`
