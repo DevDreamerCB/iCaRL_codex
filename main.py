@@ -117,6 +117,8 @@ use_task_adapter = _get_env_bool('ICARL_USE_TASK_ADAPTER', False)
 task_adapter_dim = _get_env_int('ICARL_TASK_ADAPTER_DIM', 32)
 task_adapter_start_task = _get_env_int('ICARL_TASK_ADAPTER_START_TASK', 0)
 task_adapter_lr_mult = _get_env_float('ICARL_TASK_ADAPTER_LR_MULT', 1.0)
+use_task_affine = _get_env_bool('ICARL_USE_TASK_AFFINE', False)
+task_affine_start_task = _get_env_int('ICARL_TASK_AFFINE_START_TASK', 0)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -140,7 +142,8 @@ for seed in range(1, num_seeds+1):
             lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}, \
                 use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, \
                     use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}, \
-                        task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}'
+                        task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}, \
+                            use_task_affine = {use_task_affine}, task_affine_start_task = {task_affine_start_task}'
     log.record(state_log)
     print(state_log)
 
@@ -155,6 +158,8 @@ for seed in range(1, num_seeds+1):
         adapter_dim=task_adapter_dim,
         num_tasks=num_stages,
         adapter_start_task=task_adapter_start_task,
+        use_task_affine=use_task_affine,
+        affine_start_task=task_affine_start_task,
     )
     _configure_trainable_params(feature_extractor, trainable_part)
 

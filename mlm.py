@@ -40,11 +40,14 @@ class TaskEmbeddingAdapter(nn.Module):
         return x + self.up[self.current_task](hidden)
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, embed_dim=128, num_channels=45):
+    def __init__(self, embed_dim=128, num_channels=45, use_task_affine=False, num_tasks=3, affine_start_task=0):
         super().__init__()
 
         self.num_channels = num_channels
         self.embed_dim = embed_dim
+        self.use_task_affine = use_task_affine
+        self.affine_start_task = affine_start_task
+        self.current_task = 0
         self.conv1 = nn.Conv2d(1, 64, kernel_size=(1, 25), stride=(1, 1))
         self.conv2 = nn.Conv2d(64, 128, kernel_size=(self.num_channels, 1), stride=(1, 1))
         self.bn = nn.BatchNorm2d(128)
@@ -57,6 +60,15 @@ class PatchEmbedding(nn.Module):
             Rearrange('b e (h) (w) -> b (h w) e'),
         )
         self.chan_embed = nn.Embedding(45, embed_dim)
+        if use_task_affine:
+            self.task_scale = nn.Parameter(torch.ones(num_tasks, 128))
+            self.task_bias = nn.Parameter(torch.zeros(num_tasks, 128))
+        else:
+            self.task_scale = None
+            self.task_bias = None
+
+    def set_current_task(self, task_id):
+        self.current_task = int(task_id)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x = x.unsqueeze(1)  # (B, 1, C, T)
@@ -65,6 +77,10 @@ class PatchEmbedding(nn.Module):
         
         x = self.conv2(x)
         x = self.bn(x)
+        if self.use_task_affine and self.current_task >= self.affine_start_task:
+            scale = self.task_scale[self.current_task].view(1, -1, 1, 1)
+            bias = self.task_bias[self.current_task].view(1, -1, 1, 1)
+            x = x * scale + bias
         x = self.elu(x)
         x = self.pool(x)
         x = self.dropout(x)
@@ -157,15 +173,22 @@ class decoder_fft(nn.Module):
 
 class mlm_mask(nn.Module):  
     def __init__(self, emb_size=128, depth=6, n_classes=2,mask_ratio=0.5, pretrain=None,pretrainmode=False,
-                 use_task_adapter=False, adapter_dim=32, num_tasks=3, adapter_start_task=0):
+                 use_task_adapter=False, adapter_dim=32, num_tasks=3, adapter_start_task=0,
+                 use_task_affine=False, affine_start_task=0):
         super().__init__()
         self.pretrainmode = pretrainmode
-        self.embedding = PatchEmbedding(embed_dim=emb_size)
+        self.embedding = PatchEmbedding(
+            embed_dim=emb_size,
+            use_task_affine=use_task_affine,
+            num_tasks=num_tasks,
+            affine_start_task=affine_start_task,
+        )
         self.transformer = TransformerEncoder(depth, emb_size,dropout=0.5)
         self.clshead = nn.Linear(emb_size,n_classes)
         self.mask_ratio = mask_ratio
         self.feature_dim = emb_size
         self.use_task_adapter = use_task_adapter
+        self.use_task_affine = use_task_affine
         self.current_task = 0
         self.task_adapter = TaskEmbeddingAdapter(
             emb_size,
@@ -227,6 +250,7 @@ class mlm_mask(nn.Module):
 
     def set_current_task(self, task_id):
         self.current_task = int(task_id)
+        self.embedding.set_current_task(task_id)
         if self.task_adapter is not None:
             self.task_adapter.set_current_task(task_id)
 
