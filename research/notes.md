@@ -75,3 +75,19 @@
 - score: 56.13
 - why: the corrected pipeline may finally benefit from a slightly larger memory when paired with oldweight2 rather than sampler changes
 - change: promote memory42+oldweight2 candidate to 3-seed confirm
+
+## 2026-03-14T01:01:31 `lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_short`
+- verdict: promoted_to_confirm
+- mode: screen
+- task1/task2/task3: 85.19 / 59.95 / 45.72
+- score: 57.88
+- why: memory42 plus a mild age-aware memory bias may create a better task2/task3 tradeoff than either one alone under the oldweight2 training regime
+- change: true LwF on replaymix2+adapter16 with memory size 42, old-class BCE power 2.0, and age-aware exemplar memory power 0.25
+
+## 2026-03-14T01:11:24 `lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm`
+- verdict: confirm_completed
+- mode: full
+- task1/task2/task3: 85.73 / 58.41 / 42.22
+- score: 55.78
+- why: a slightly larger memory with mild age bias may be the most thesis-friendly extension of the current oldweight2 line if the short-run gain holds
+- change: promote memory42+oldweight2+age-memory(0.25) candidate to 3-seed confirm

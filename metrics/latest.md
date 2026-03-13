@@ -1,18 +1,18 @@
 # Latest Metrics
 
-- run tag: `20260314_004956_20260314_004952_lwf015_replaymix2_adapter16_mem42_oldweight2_confirm`
+- run tag: `20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm`
 - epochs: ``
 - seeds: `3`
 - gpu: `4`
-- note: `lwf015_replaymix2_adapter16_mem42_oldweight2_confirm`
+- note: `lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm`
 - stage epochs: `None`
 - trainable part: `all`
 - proto align: `False` @ `0.1`
 - task1 / stage1 total: `85.73`
-- task2 / stage2 total: `58.36`
-- task3 / stage3 total: `42.95`
-- score: `56.13`
-- log: `20260314_004956_20260314_004952_lwf015_replaymix2_adapter16_mem42_oldweight2_confirm/log_MIRepNet_EA_2026-03-13_16_49_56.txt;20260314_004956_20260314_004952_lwf015_replaymix2_adapter16_mem42_oldweight2_confirm/log_MIRepNet_EA_2026-03-13_16_53_14.txt;20260314_004956_20260314_004952_lwf015_replaymix2_adapter16_mem42_oldweight2_confirm/log_MIRepNet_EA_2026-03-13_16_56_30.txt`
+- task2 / stage2 total: `58.41`
+- task3 / stage3 total: `42.22`
+- score: `55.78`
+- log: `20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm/log_MIRepNet_EA_2026-03-13_17_01_35.txt;20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm/log_MIRepNet_EA_2026-03-13_17_04_55.txt;20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm/log_MIRepNet_EA_2026-03-13_17_08_09.txt`
 
 ## Best Full Confirm So Far
 - run tag: `20260312_214625_20260312_214621_no_contrastive_adapter16_s2_lr15_confirm`
