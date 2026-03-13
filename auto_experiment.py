@@ -68,12 +68,16 @@ def run_experiment(args):
     env["ICARL_GPU_ID"] = str(gpu_id)
     env["ICARL_NUM_SEEDS"] = str(args.seeds)
     env["ICARL_EPOCHS"] = str(args.epochs)
+    if args.stage_epochs:
+        env["ICARL_STAGE_EPOCHS"] = args.stage_epochs
     env["ICARL_RUN_TAG"] = run_tag
     env["ICARL_USE_CONTRASTIVE"] = "true" if args.use_contrastive else "false"
     env["ICARL_BALANCE_SAMPLE"] = "true" if args.balance_sample else "false"
+    env["ICARL_BALANCE_POWER"] = str(args.balance_power)
     env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
     env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
     env["ICARL_TRAINABLE_PART"] = args.trainable_part
+    env["ICARL_WEIGHTED_CE"] = "true" if args.weighted_ce else "false"
     env["ICARL_USE_PROTO_ALIGN"] = "true" if args.use_proto_align else "false"
     env["ICARL_PROTO_ALIGN_LAMBDA"] = str(args.proto_align_lambda)
     env["ICARL_USE_TASK_ADAPTER"] = "true" if args.use_task_adapter else "false"
@@ -88,6 +92,11 @@ def run_experiment(args):
     env["ICARL_USE_TASK_PROMPT"] = "true" if args.use_task_prompt else "false"
     env["ICARL_TASK_PROMPT_LEN"] = str(args.task_prompt_len)
     env["ICARL_TASK_PROMPT_START_TASK"] = str(args.task_prompt_start_task)
+    env["ICARL_USE_TASK_LORA"] = "true" if args.use_task_lora else "false"
+    env["ICARL_TASK_LORA_RANK"] = str(args.task_lora_rank)
+    env["ICARL_TASK_LORA_ALPHA"] = str(args.task_lora_alpha)
+    env["ICARL_TASK_LORA_DROPOUT"] = str(args.task_lora_dropout)
+    env["ICARL_TASK_LORA_START_TASK"] = str(args.task_lora_start_task)
     env["ICARL_USE_TASK_AFFINE"] = "true" if args.use_task_affine else "false"
     env["ICARL_TASK_AFFINE_START_TASK"] = str(args.task_affine_start_task)
     env["ICARL_USE_TASK_BN"] = "true" if args.use_task_bn else "false"
@@ -151,9 +160,13 @@ def main():
     parser.add_argument("--max-util", type=int, default=20)
     parser.add_argument("--seeds", type=int)
     parser.add_argument("--epochs", type=int)
+    parser.add_argument("--stage-epochs", default="")
     parser.add_argument("--memory-size", type=int, default=24)
     parser.add_argument("--lr", type=float)
     parser.add_argument("--trainable-part", default="all")
+    parser.add_argument("--use-weighted-ce", dest="weighted_ce", action="store_true")
+    parser.add_argument("--no-use-weighted-ce", dest="weighted_ce", action="store_false")
+    parser.set_defaults(weighted_ce=False)
     parser.add_argument("--use-proto-align", action="store_true")
     parser.add_argument("--no-use-proto-align", dest="use_proto_align", action="store_false")
     parser.set_defaults(use_proto_align=False)
@@ -176,6 +189,13 @@ def main():
     parser.set_defaults(use_task_prompt=False)
     parser.add_argument("--task-prompt-len", type=int, default=4)
     parser.add_argument("--task-prompt-start-task", type=int, default=0)
+    parser.add_argument("--use-task-lora", action="store_true")
+    parser.add_argument("--no-use-task-lora", dest="use_task_lora", action="store_false")
+    parser.set_defaults(use_task_lora=False)
+    parser.add_argument("--task-lora-rank", type=int, default=4)
+    parser.add_argument("--task-lora-alpha", type=float, default=1.0)
+    parser.add_argument("--task-lora-dropout", type=float, default=0.0)
+    parser.add_argument("--task-lora-start-task", type=int, default=0)
     parser.add_argument("--use-task-affine", action="store_true")
     parser.add_argument("--no-use-task-affine", dest="use_task_affine", action="store_false")
     parser.set_defaults(use_task_affine=False)
@@ -190,6 +210,7 @@ def main():
     parser.add_argument("--balance-sample", action="store_true")
     parser.add_argument("--no-balance-sample", dest="balance_sample", action="store_false")
     parser.set_defaults(balance_sample=True)
+    parser.add_argument("--balance-power", type=float, default=0.5)
     parser.add_argument("--use-align", action="store_true")
     parser.add_argument("--no-use-align", dest="use_align", action="store_false")
     parser.set_defaults(use_align=True)

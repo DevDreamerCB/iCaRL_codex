@@ -37,6 +37,13 @@ def _get_env_str(name, default):
     return value
 
 
+def _get_env_int_list(name, default=None):
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return [int(item.strip()) for item in value.split(',') if item.strip()]
+
+
 def _configure_trainable_params(feature_extractor, mode):
     mode = (mode or "all").strip().lower()
     if mode == "all":
@@ -88,9 +95,11 @@ pretrain_path = os.getenv('ICARL_PRETRAIN_PATH', '/data1/bochen/MIRepNet/weight/
 numclass = _get_env_int('ICARL_INIT_NUMCLASS', 2)
 batch_size = _get_env_int('ICARL_BATCH_SIZE', 32)
 balance_sample = _get_env_bool('ICARL_BALANCE_SAMPLE', True)
+balance_power = _get_env_float('ICARL_BALANCE_POWER', 0.5)
 num_stages = _get_env_int('ICARL_NUM_STAGES', 3)
 num_seeds = _get_env_int('ICARL_NUM_SEEDS', 3)
 epochs = _get_env_int('ICARL_EPOCHS', 30)
+stage_epochs = _get_env_int_list('ICARL_STAGE_EPOCHS', None)
 learning_rate = _get_env_float('ICARL_LR', 0.001)
 
 is_cross_session = _get_env_bool('ICARL_CROSS_SESSION', True)
@@ -125,6 +134,11 @@ shared_adapter_start_task = _get_env_int('ICARL_SHARED_ADAPTER_START_TASK', 0)
 use_task_prompt = _get_env_bool('ICARL_USE_TASK_PROMPT', False)
 task_prompt_len = _get_env_int('ICARL_TASK_PROMPT_LEN', 4)
 task_prompt_start_task = _get_env_int('ICARL_TASK_PROMPT_START_TASK', 0)
+use_task_lora = _get_env_bool('ICARL_USE_TASK_LORA', False)
+task_lora_rank = _get_env_int('ICARL_TASK_LORA_RANK', 4)
+task_lora_alpha = _get_env_float('ICARL_TASK_LORA_ALPHA', 1.0)
+task_lora_dropout = _get_env_float('ICARL_TASK_LORA_DROPOUT', 0.0)
+task_lora_start_task = _get_env_int('ICARL_TASK_LORA_START_TASK', 0)
 use_task_affine = _get_env_bool('ICARL_USE_TASK_AFFINE', False)
 task_affine_start_task = _get_env_int('ICARL_TASK_AFFINE_START_TASK', 0)
 use_task_bn = _get_env_bool('ICARL_USE_TASK_BN', False)
@@ -147,9 +161,9 @@ for seed in range(1, num_seeds+1):
     log = LogRecord(result_dir, '2014001', 'MIRepNet', is_align)
     log.log_init()
 
-    state_log = f'Replay memory size:{memory_size}, learning_rate:{learning_rate}, epochs:{epochs}, \
-        is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, is_contrastive_loss:{is_contrastive_loss},\
-            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, trainable_part = {trainable_part}, \
+    state_log = f'Replay memory size:{memory_size}, learning_rate:{learning_rate}, epochs:{epochs}, stage_epochs:{stage_epochs}, \
+        is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, balance_power:{balance_power}, is_contrastive_loss:{is_contrastive_loss},\
+            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, weighted_crossentropy = {weighted_crossentropy}, trainable_part = {trainable_part}, \
                 use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, \
                     use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}, \
                         task_adapter_dropout = {task_adapter_dropout}, task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}, \
@@ -157,6 +171,9 @@ for seed in range(1, num_seeds+1):
                                 shared_adapter_dropout = {shared_adapter_dropout}, shared_adapter_start_task = {shared_adapter_start_task}, \
                                     use_task_prompt = {use_task_prompt}, task_prompt_len = {task_prompt_len}, \
                                         task_prompt_start_task = {task_prompt_start_task}, \
+                                            use_task_lora = {use_task_lora}, task_lora_rank = {task_lora_rank}, \
+                                                task_lora_alpha = {task_lora_alpha}, task_lora_dropout = {task_lora_dropout}, \
+                                                    task_lora_start_task = {task_lora_start_task}, \
                             use_task_affine = {use_task_affine}, task_affine_start_task = {task_affine_start_task}, \
                                 use_task_bn = {use_task_bn}, task_bn_start_task = {task_bn_start_task}'
     log.record(state_log)
@@ -181,6 +198,11 @@ for seed in range(1, num_seeds+1):
         use_task_prompt=use_task_prompt,
         task_prompt_len=task_prompt_len,
         task_prompt_start_task=task_prompt_start_task,
+        use_task_lora=use_task_lora,
+        task_lora_rank=task_lora_rank,
+        task_lora_alpha=task_lora_alpha,
+        task_lora_dropout=task_lora_dropout,
+        task_lora_start_task=task_lora_start_task,
         use_task_affine=use_task_affine,
         affine_start_task=task_affine_start_task,
         use_task_bn=use_task_bn,
@@ -190,11 +212,11 @@ for seed in range(1, num_seeds+1):
 
     model=CBiCaRL(seed,result_dir, data_path, is_cross_session, numclass,\
         feature_extractor,batch_size,\
-        memory_size, balance_sample,is_contrastive_loss, lambda_contrastive_loss, temperature, \
+        memory_size, balance_sample, balance_power, is_contrastive_loss, lambda_contrastive_loss, temperature, \
         use_proto_align, proto_align_lambda, \
         task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy,\
-        epochs,learning_rate,is_align,log,current_date)
+        epochs, stage_epochs, learning_rate,is_align,log,current_date)
 
     current_seed_stage_results = []
 

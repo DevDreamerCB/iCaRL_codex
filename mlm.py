@@ -86,6 +86,34 @@ class TaskPromptPool(nn.Module):
         prompt = self.prompts[self.current_task].unsqueeze(0).expand(x.size(0), -1, -1)
         return torch.cat([prompt, x], dim=1)
 
+
+class TaskLoRAProjection(nn.Module):
+    def __init__(self, in_features, out_features, rank=4, alpha=1.0, dropout=0.0, num_tasks=3, start_task=0):
+        super().__init__()
+        self.rank = rank
+        self.alpha = alpha
+        self.scale = alpha / max(rank, 1)
+        self.num_tasks = num_tasks
+        self.start_task = start_task
+        self.current_task = 0
+        self.dropout = nn.Dropout(dropout)
+        self.lora_A = nn.ModuleList([nn.Linear(in_features, rank, bias=False) for _ in range(num_tasks)])
+        self.lora_B = nn.ModuleList([nn.Linear(rank, out_features, bias=False) for _ in range(num_tasks)])
+
+        for proj_a, proj_b in zip(self.lora_A, self.lora_B):
+            nn.init.kaiming_uniform_(proj_a.weight, a=math.sqrt(5))
+            nn.init.zeros_(proj_b.weight)
+
+    def set_current_task(self, task_id):
+        self.current_task = max(0, min(int(task_id), self.num_tasks - 1))
+
+    def forward(self, x):
+        if self.current_task < self.start_task:
+            return 0.0
+        update = self.lora_A[self.current_task](self.dropout(x))
+        update = self.lora_B[self.current_task](update)
+        return self.scale * update
+
 class PatchEmbedding(nn.Module):
     def __init__(self, embed_dim=128, num_channels=45, use_task_affine=False, num_tasks=3, affine_start_task=0,
                  use_task_bn=False, bn_start_task=0):
@@ -145,7 +173,8 @@ class PatchEmbedding(nn.Module):
         return x
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, emb_size, num_heads, dropout):
+    def __init__(self, emb_size, num_heads, dropout, use_task_lora=False, lora_rank=4, lora_alpha=1.0,
+                 lora_dropout=0.0, num_tasks=3, lora_start_task=0):
         super().__init__()
         self.emb_size = emb_size
         self.num_heads = num_heads
@@ -154,11 +183,44 @@ class MultiHeadAttention(nn.Module):
         self.values = nn.Linear(emb_size, emb_size)
         self.att_drop = nn.Dropout(dropout)
         self.projection = nn.Linear(emb_size, emb_size)
+        self.use_task_lora = use_task_lora
+        self.current_task = 0
+        self.query_lora = TaskLoRAProjection(
+            emb_size,
+            emb_size,
+            rank=lora_rank,
+            alpha=lora_alpha,
+            dropout=lora_dropout,
+            num_tasks=num_tasks,
+            start_task=lora_start_task,
+        ) if use_task_lora else None
+        self.value_lora = TaskLoRAProjection(
+            emb_size,
+            emb_size,
+            rank=lora_rank,
+            alpha=lora_alpha,
+            dropout=lora_dropout,
+            num_tasks=num_tasks,
+            start_task=lora_start_task,
+        ) if use_task_lora else None
+
+    def set_current_task(self, task_id):
+        self.current_task = int(task_id)
+        if self.query_lora is not None:
+            self.query_lora.set_current_task(task_id)
+        if self.value_lora is not None:
+            self.value_lora.set_current_task(task_id)
 
     def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-        queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
+        query_states = self.queries(x)
+        value_states = self.values(x)
+        if self.query_lora is not None:
+            query_states = query_states + self.query_lora(x)
+        if self.value_lora is not None:
+            value_states = value_states + self.value_lora(x)
+        queries = rearrange(query_states, "b n (h d) -> b h n d", h=self.num_heads)
         keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
-        values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
+        values = rearrange(value_states, "b n (h d) -> b h n d", h=self.num_heads)
         energy = torch.einsum('bhqd, bhkd -> bhqk', queries, keys)  
         if mask is not None:
             fill_value = torch.finfo(torch.float32).min
@@ -192,11 +254,23 @@ class FeedForwardBlock(nn.Sequential):
         )
 
 class TransformerEncoderBlock(nn.Sequential):
-    def __init__(self, emb_size, num_heads=8, drop_p=0.5, forward_expansion=4, forward_drop_p=0.5):
+    def __init__(self, emb_size, num_heads=8, drop_p=0.5, forward_expansion=4, forward_drop_p=0.5,
+                 use_task_lora=False, lora_rank=4, lora_alpha=1.0, lora_dropout=0.0, num_tasks=3,
+                 lora_start_task=0):
         super().__init__(
             ResidualAdd(nn.Sequential(
                 nn.LayerNorm(emb_size),
-                MultiHeadAttention(emb_size, num_heads, drop_p),
+                MultiHeadAttention(
+                    emb_size,
+                    num_heads,
+                    drop_p,
+                    use_task_lora=use_task_lora,
+                    lora_rank=lora_rank,
+                    lora_alpha=lora_alpha,
+                    lora_dropout=lora_dropout,
+                    num_tasks=num_tasks,
+                    lora_start_task=lora_start_task,
+                ),
                 nn.Dropout(drop_p)
             )),
             ResidualAdd(nn.Sequential(
@@ -207,8 +281,23 @@ class TransformerEncoderBlock(nn.Sequential):
         )
 
 class TransformerEncoder(nn.Sequential):
-    def __init__(self, depth, emb_size,dropout=0.5):
-        super().__init__(*[TransformerEncoderBlock(emb_size,drop_p=dropout) for _ in range(depth)])
+    def __init__(self, depth, emb_size,dropout=0.5, use_task_lora=False, lora_rank=4, lora_alpha=1.0,
+                 lora_dropout=0.0, num_tasks=3, lora_start_task=0):
+        super().__init__(
+            *[
+                TransformerEncoderBlock(
+                    emb_size,
+                    drop_p=dropout,
+                    use_task_lora=use_task_lora,
+                    lora_rank=lora_rank,
+                    lora_alpha=lora_alpha,
+                    lora_dropout=lora_dropout,
+                    num_tasks=num_tasks,
+                    lora_start_task=lora_start_task,
+                )
+                for _ in range(depth)
+            ]
+        )
 
 class decoder(nn.Module):  
     def __init__(self, emb_size=64, depth=2, pretrain=None,**kwargs):
@@ -233,6 +322,7 @@ class mlm_mask(nn.Module):
                  use_task_adapter=False, adapter_dim=32, adapter_dropout=0.1, num_tasks=3, adapter_start_task=0,
                  use_shared_adapter=False, shared_adapter_dim=16, shared_adapter_dropout=0.1, shared_adapter_start_task=0,
                  use_task_prompt=False, task_prompt_len=4, task_prompt_start_task=0,
+                 use_task_lora=False, task_lora_rank=4, task_lora_alpha=1.0, task_lora_dropout=0.0, task_lora_start_task=0,
                  use_task_affine=False, affine_start_task=0,
                  use_task_bn=False, bn_start_task=0):
         super().__init__()
@@ -245,13 +335,24 @@ class mlm_mask(nn.Module):
             use_task_bn=use_task_bn,
             bn_start_task=bn_start_task,
         )
-        self.transformer = TransformerEncoder(depth, emb_size,dropout=0.5)
+        self.transformer = TransformerEncoder(
+            depth,
+            emb_size,
+            dropout=0.5,
+            use_task_lora=use_task_lora,
+            lora_rank=task_lora_rank,
+            lora_alpha=task_lora_alpha,
+            lora_dropout=task_lora_dropout,
+            num_tasks=num_tasks,
+            lora_start_task=task_lora_start_task,
+        )
         self.clshead = nn.Linear(emb_size,n_classes)
         self.mask_ratio = mask_ratio
         self.feature_dim = emb_size
         self.use_task_adapter = use_task_adapter
         self.use_shared_adapter = use_shared_adapter
         self.use_task_prompt = use_task_prompt
+        self.use_task_lora = use_task_lora
         self.use_task_affine = use_task_affine
         self.use_task_bn = use_task_bn
         self.current_task = 0
@@ -333,6 +434,9 @@ class mlm_mask(nn.Module):
     def set_current_task(self, task_id):
         self.current_task = int(task_id)
         self.embedding.set_current_task(task_id)
+        for module in self.transformer.modules():
+            if hasattr(module, "set_current_task"):
+                module.set_current_task(task_id)
         if self.shared_adapter is not None:
             self.shared_adapter.set_current_task(task_id)
         if self.task_adapter is not None:

@@ -12,6 +12,7 @@ FINAL_ACC_RE = re.compile(r"Final Total Accuracy:\s*([0-9.]+)%")
 STATE_RE = re.compile(
     r"Replay memory size:(?P<memory>\d+), learning_rate:(?P<lr>[0-9.]+), epochs:(?P<epochs>\d+),"
 )
+STAGE_EPOCHS_RE = re.compile(r"stage_epochs:(?P<stage_epochs>\[[^\]]*\]|None)")
 TRAINABLE_RE = re.compile(r"trainable_part\s*=\s*(?P<trainable>[A-Za-z_]+)")
 PROTO_ALIGN_RE = re.compile(r"use_proto_align\s*=\s*(?P<enabled>True|False),\s*proto_align_lambda\s*=\s*(?P<lam>[0-9.]+)")
 
@@ -25,6 +26,7 @@ def parse_single_log(log_path: Path):
         "memory_size": "",
         "learning_rate": "",
         "epochs": "",
+        "stage_epochs": "",
         "trainable_part": "",
         "use_proto_align": "",
         "proto_align_lambda": "",
@@ -39,6 +41,9 @@ def parse_single_log(log_path: Path):
                 config["memory_size"] = state_match.group("memory")
                 config["learning_rate"] = state_match.group("lr")
                 config["epochs"] = state_match.group("epochs")
+            stage_epochs_match = STAGE_EPOCHS_RE.search(line)
+            if stage_epochs_match:
+                config["stage_epochs"] = stage_epochs_match.group("stage_epochs")
             trainable_match = TRAINABLE_RE.search(line)
             if trainable_match:
                 config["trainable_part"] = trainable_match.group("trainable")
@@ -81,6 +86,7 @@ def parse_single_log(log_path: Path):
         "run_tag": run_tag,
         "log_file": str(log_path.relative_to(log_path.parents[1])),
         "epochs": config["epochs"],
+        "stage_epochs": config["stage_epochs"],
         "learning_rate": config["learning_rate"],
         "memory_size": config["memory_size"],
         "trainable_part": config["trainable_part"],
@@ -109,6 +115,7 @@ def parse_run_dir(log_dir: Path):
         "run_tag": log_dir.name,
         "log_file": ";".join(p["log_file"] for p in parsed_logs),
         "epochs": parsed_logs[-1].get("epochs", ""),
+        "stage_epochs": parsed_logs[-1].get("stage_epochs", ""),
         "learning_rate": parsed_logs[-1].get("learning_rate", ""),
         "memory_size": parsed_logs[-1].get("memory_size", ""),
         "trainable_part": parsed_logs[-1].get("trainable_part", ""),
@@ -153,6 +160,8 @@ def compute_score(row):
 def write_latest_md(rows, md_path: Path):
     md_path.parent.mkdir(parents=True, exist_ok=True)
     complete_rows = [r for r in rows if r["stage3_total"] != ""]
+    full_rows = [r for r in complete_rows if r.get("mode") == "full"]
+    screen_rows = [r for r in complete_rows if r.get("mode") == "screen"]
     if complete_rows:
         latest = complete_rows[-1]
     elif rows:
@@ -172,6 +181,7 @@ def write_latest_md(rows, md_path: Path):
                 f"- seeds: `{latest.get('seeds', '')}`",
                 f"- gpu: `{latest.get('gpu', '')}`",
                 f"- note: `{latest.get('note', '')}`",
+                f"- stage epochs: `{latest.get('stage_epochs', '')}`",
                 f"- trainable part: `{latest.get('trainable_part', '')}`",
                 f"- proto align: `{latest.get('use_proto_align', '')}` @ `{latest.get('proto_align_lambda', '')}`",
                 f"- task1 / stage1 total: `{latest['stage1_total']}`",
@@ -182,18 +192,32 @@ def write_latest_md(rows, md_path: Path):
             ]
         )
 
-        if complete_rows:
-            best = max(complete_rows, key=lambda r: float(r.get("score", -1) or -1))
+        if full_rows:
+            best_full = max(full_rows, key=lambda r: float(r.get("score", -1) or -1))
             lines.extend(
                 [
                     "",
-                    "## Best Completed Run So Far",
-                    f"- run tag: `{best['run_tag']}`",
-                    f"- note: `{best.get('note', '')}`",
-                    f"- task3 total: `{best['stage3_total']}`",
-                    f"- task2 total: `{best['stage2_total']}`",
-                    f"- task1 total: `{best['stage1_total']}`",
-                    f"- score: `{best.get('score', '')}`",
+                    "## Best Full Confirm So Far",
+                    f"- run tag: `{best_full['run_tag']}`",
+                    f"- note: `{best_full.get('note', '')}`",
+                    f"- task3 total: `{best_full['stage3_total']}`",
+                    f"- task2 total: `{best_full['stage2_total']}`",
+                    f"- task1 total: `{best_full['stage1_total']}`",
+                    f"- score: `{best_full.get('score', '')}`",
+                ]
+            )
+        if screen_rows:
+            best_screen = max(screen_rows, key=lambda r: float(r.get("score", -1) or -1))
+            lines.extend(
+                [
+                    "",
+                    "## Best Screen So Far",
+                    f"- run tag: `{best_screen['run_tag']}`",
+                    f"- note: `{best_screen.get('note', '')}`",
+                    f"- task3 total: `{best_screen['stage3_total']}`",
+                    f"- task2 total: `{best_screen['stage2_total']}`",
+                    f"- task1 total: `{best_screen['stage1_total']}`",
+                    f"- score: `{best_screen.get('score', '')}`",
                 ]
             )
 
@@ -219,6 +243,7 @@ def append_experiment_row(
         "gpu",
         "seeds",
         "epochs",
+        "stage_epochs",
         "learning_rate",
         "memory_size",
         "trainable_part",
@@ -241,6 +266,7 @@ def append_experiment_row(
         "gpu": gpu,
         "seeds": seeds,
         "epochs": parsed_row.get("epochs", ""),
+        "stage_epochs": parsed_row.get("stage_epochs", ""),
         "learning_rate": parsed_row.get("learning_rate", ""),
         "memory_size": parsed_row.get("memory_size", ""),
         "trainable_part": parsed_row.get("trainable_part", ""),
@@ -279,6 +305,7 @@ def write_experiment_rows(csv_path: Path, rows):
         "gpu",
         "seeds",
         "epochs",
+        "stage_epochs",
         "learning_rate",
         "memory_size",
         "trainable_part",
@@ -317,6 +344,7 @@ def migrate_log_history(log_root: Path, csv_path: Path):
                 "gpu": "",
                 "seeds": "",
                 "epochs": parsed["epochs"],
+                "stage_epochs": parsed.get("stage_epochs", ""),
                 "learning_rate": parsed["learning_rate"],
                 "memory_size": parsed["memory_size"],
                 "trainable_part": parsed.get("trainable_part", ""),

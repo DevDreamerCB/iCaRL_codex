@@ -25,16 +25,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class CBiCaRL:
     def __init__(self, seed, result_dir, data_path, is_cross_session, numclass, feature_extractor, \
-        batch_size, memory_size, balance_sample, is_contrastive_loss, lambda_contrastive_loss, temperature,\
+        batch_size, memory_size, balance_sample, balance_power, is_contrastive_loss, lambda_contrastive_loss, temperature,\
         use_proto_align, proto_align_lambda, \
         task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy, \
-            epochs, learning_rate, is_align, log, current_date):
+            epochs, stage_epochs, learning_rate, is_align, log, current_date):
         super().__init__()
 
         self.seed = seed
         self.result_dir = result_dir
         self.epochs = epochs
+        self.stage_epochs = stage_epochs
         self.learning_rate = learning_rate
         self.model = Network(numclass,feature_extractor)
         self.stage = None
@@ -48,6 +49,7 @@ class CBiCaRL:
 
         self.batch_size = batch_size
         self.balance_sample =balance_sample
+        self.balance_power = balance_power
 
         self.train_loader=None
         self.test_loader=None
@@ -179,6 +181,8 @@ class CBiCaRL:
             self.log.record(shape_info)
             print(shape_info)
 
+        self.class_weights = self._compute_class_weights(train_dataset)
+
         if balance_sample:
             train_loader = self._balance_sample_train_loader(train_dataset=train_dataset)
         else:
@@ -186,6 +190,25 @@ class CBiCaRL:
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, drop_last=False, pin_memory=True)
 
         return train_loader, test_loader
+
+    def _compute_class_weights(self, train_dataset):
+        all_labels = []
+        for i in range(len(train_dataset)):
+            _, label = train_dataset[i]
+            all_labels.append(label.item())
+        if not all_labels:
+            return None
+
+        all_labels = torch.tensor(all_labels, dtype=torch.long)
+        class_counts = torch.bincount(all_labels, minlength=self.numclass).float()
+        valid_mask = class_counts > 0
+        if valid_mask.sum().item() == 0:
+            return None
+
+        class_weights = torch.ones_like(class_counts)
+        class_weights[valid_mask] = 1.0 / torch.pow(class_counts[valid_mask], self.balance_power)
+        class_weights = class_weights / class_weights[valid_mask].mean()
+        return class_weights.to(device)
 
     def _balance_sample_train_loader(self,train_dataset):
         '''
@@ -209,7 +232,7 @@ class CBiCaRL:
         for c in classes:
             # class_weights[c] = 1.0 / class_counts[c]
             # 使用平方根平滑，减少 A 类的过高采样率
-            class_weights[c] = 1.0 / torch.pow(class_counts[c], 0.5)
+            class_weights[c] = 1.0 / torch.pow(class_counts[c], self.balance_power)
 
         # 4. 为数据集中的【每一个样本】分配权重
         sample_weights = class_weights[all_labels]
@@ -234,6 +257,9 @@ class CBiCaRL:
         return train_loader 
 
     def train(self):
+        current_epochs = self.epochs
+        if self.stage_epochs and len(self.stage_epochs) >= self.stage:
+            current_epochs = int(self.stage_epochs[self.stage - 1])
 
         # 创建 TensorBoard writer
         ea_status = "EA" if self.is_align else "noEA"
@@ -254,7 +280,7 @@ class CBiCaRL:
         for name, param in self.model.named_parameters():
             if not param.requires_grad:
                 continue
-            if 'task_adapter' in name:
+            if any(tag in name for tag in ('task_adapter', 'shared_adapter', 'task_prompt', 'lora_')):
                 adapter_params.append(param)
             else:
                 base_params.append(param)
@@ -276,12 +302,12 @@ class CBiCaRL:
         optimizer = optim.Adam(param_groups)
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=self.epochs, T_mult=1, eta_min=1e-6
+            optimizer, T_0=current_epochs, T_mult=1, eta_min=1e-6
         )
 
         train_loader_len = len(self.train_loader)
 
-        for epoch in range(self.epochs):
+        for epoch in range(current_epochs):
             
             # accumulators for monitoring
             epoch_train_losses = []
@@ -309,7 +335,12 @@ class CBiCaRL:
                 
                 target.scatter_(1, y.reshape(-1,1), 1.0)
                 
-                loss_bce = F.binary_cross_entropy_with_logits(logits, target)
+                if self.weighted_crossentropy and self.class_weights is not None:
+                    bce_matrix = F.binary_cross_entropy_with_logits(logits, target, reduction='none')
+                    active_weights = self.class_weights[:logits.size(1)].view(1, -1)
+                    loss_bce = (bce_matrix * active_weights).mean()
+                else:
+                    loss_bce = F.binary_cross_entropy_with_logits(logits, target)
 
                 if self.is_contrastive_loss:
                     loss_con = self.supervised_contrastive_loss(features, y, temperature=self.temperature)
