@@ -18,8 +18,14 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 cd "$ROOT_DIR"
-nohup python overnight_research.py "$HOURS" >> "$LOG_FILE" 2>&1 &
+nohup python -u overnight_research.py "$HOURS" >> "$LOG_FILE" 2>&1 < /dev/null &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
+sleep 2
+if ! kill -0 "$NEW_PID" 2>/dev/null; then
+  echo "overnight runner exited early"
+  tail -n 40 "$LOG_FILE" 2>/dev/null || true
+  exit 1
+fi
 echo "started overnight runner: pid=$NEW_PID"
 echo "log: $LOG_FILE"
