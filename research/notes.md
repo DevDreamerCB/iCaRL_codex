@@ -59,3 +59,19 @@
 - score: 56.05
 - why: oldweight 2.5 may improve task3 retention beyond oldweight2 if the gain is coming from stronger oldest-class protection rather than overfitting
 - change: promote old-class BCE power 2.5 candidate to 3-seed confirm
+
+## 2026-03-14T00:49:52 `lwf015_replaymix2_adapter16_mem42_oldweight2_short`
+- verdict: promoted_to_confirm
+- mode: screen
+- task1/task2/task3: 85.19 / 59.72 / 45.72
+- score: 57.81
+- why: once oldweight2 stabilizes forgetting, a modestly larger memory budget of 42 may improve task2/task3 without the instability seen in earlier sampler variants
+- change: true LwF on replaymix2+adapter16 with memory size 42 and old-class BCE power 2.0
+
+## 2026-03-14T00:59:49 `lwf015_replaymix2_adapter16_mem42_oldweight2_confirm`
+- verdict: confirm_completed
+- mode: full
+- task1/task2/task3: 85.73 / 58.36 / 42.95
+- score: 56.13
+- why: the corrected pipeline may finally benefit from a slightly larger memory when paired with oldweight2 rather than sampler changes
+- change: promote memory42+oldweight2 candidate to 3-seed confirm
