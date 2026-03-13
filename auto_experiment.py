@@ -74,6 +74,7 @@ def run_experiment(args):
     env["ICARL_USE_CONTRASTIVE"] = "true" if args.use_contrastive else "false"
     env["ICARL_BALANCE_SAMPLE"] = "true" if args.balance_sample else "false"
     env["ICARL_BALANCE_POWER"] = str(args.balance_power)
+    env["ICARL_REPLAY_BATCH_SIZE"] = str(args.replay_batch_size)
     env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
     env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
     env["ICARL_TRAINABLE_PART"] = args.trainable_part
@@ -211,6 +212,7 @@ def main():
     parser.add_argument("--no-balance-sample", dest="balance_sample", action="store_false")
     parser.set_defaults(balance_sample=True)
     parser.add_argument("--balance-power", type=float, default=0.5)
+    parser.add_argument("--replay-batch-size", type=int, default=0)
     parser.add_argument("--use-align", action="store_true")
     parser.add_argument("--no-use-align", dest="use_align", action="store_false")
     parser.set_defaults(use_align=True)

@@ -11,6 +11,7 @@ from torch.utils.data import TensorDataset, DataLoader, ConcatDataset, WeightedR
 from torch.nn import functional as F
 import gc
 import random
+from itertools import cycle
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
@@ -23,9 +24,54 @@ from utils import extract_labels_from_dataset,\
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
+class FixedReplayDataLoader:
+    def __init__(self, new_dataset, replay_dataset, batch_size, replay_batch_size, pin_memory=True):
+        self.new_dataset = new_dataset
+        self.replay_dataset = replay_dataset
+        self.batch_size = batch_size
+        self.replay_batch_size = max(0, min(replay_batch_size, batch_size - 1))
+        self.new_batch_size = batch_size - self.replay_batch_size
+        self.pin_memory = pin_memory
+        self.drop_last = False
+        self.num_workers = 0
+        self.dataset = ConcatDataset([new_dataset, replay_dataset])
+
+    def __len__(self):
+        return int(np.ceil(len(self.new_dataset) / max(1, self.new_batch_size)))
+
+    def __iter__(self):
+        new_loader = DataLoader(
+            self.new_dataset,
+            batch_size=self.new_batch_size,
+            shuffle=True,
+            drop_last=False,
+            pin_memory=self.pin_memory,
+        )
+        replay_loader = DataLoader(
+            self.replay_dataset,
+            batch_size=self.replay_batch_size,
+            shuffle=True,
+            drop_last=False,
+            pin_memory=self.pin_memory,
+        ) if self.replay_batch_size > 0 else None
+
+        replay_iter = cycle(replay_loader) if replay_loader is not None else None
+
+        for new_x, new_y in new_loader:
+            if replay_iter is None:
+                yield new_x, new_y
+                continue
+
+            replay_x, replay_y = next(replay_iter)
+            x = torch.cat([new_x, replay_x], dim=0)
+            y = torch.cat([new_y, replay_y], dim=0)
+            perm = torch.randperm(y.size(0))
+            yield x[perm], y[perm]
+
 class CBiCaRL:
     def __init__(self, seed, result_dir, data_path, is_cross_session, numclass, feature_extractor, \
-        batch_size, memory_size, balance_sample, balance_power, is_contrastive_loss, lambda_contrastive_loss, temperature,\
+        batch_size, memory_size, balance_sample, balance_power, replay_batch_size, is_contrastive_loss, lambda_contrastive_loss, temperature,\
         use_proto_align, proto_align_lambda, \
         task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy, \
@@ -50,6 +96,7 @@ class CBiCaRL:
         self.batch_size = batch_size
         self.balance_sample =balance_sample
         self.balance_power = balance_power
+        self.replay_batch_size = replay_batch_size
 
         self.train_loader=None
         self.test_loader=None
@@ -98,18 +145,6 @@ class CBiCaRL:
 
         self.train_loader, self.test_loader = self._get_train_and_test_dataloader(self.train_idt, self.test_idt, train_class_list, test_class_list, self.balance_sample)
         
-        # Preprocess data
-        self.train_loader = process_and_replace_loader(
-            self.train_loader, 
-            ischangechn=True, 
-            dataset='BNCI2014001-4'
-        )
-        self.test_loader = process_and_replace_loader(
-            self.test_loader, 
-            ischangechn=True, 
-            dataset='BNCI2014001-4'
-        )
-
         if self.stage > 1:
             self.prev_model = copy.deepcopy(self.model)
             self.prev_model.to(device)
@@ -165,25 +200,39 @@ class CBiCaRL:
         print(subject_info)
         print(shape_info)
 
-        Xtr = torch.tensor(X_train, dtype=torch.float32)
+        Xtr = process_data_chn(X_train)
         Ytr = torch.tensor(y_train, dtype=torch.long)
-        Xte = torch.tensor(X_test, dtype=torch.float32)
+        Xte = process_data_chn(X_test)
         Yte = torch.tensor(y_test, dtype=torch.long)
 
-        train_dataset = TensorDataset(Xtr, Ytr)
+        train_dataset = TensorDataset(Xtr.float(), Ytr)
         test_dataset = TensorDataset(Xte, Yte)
 
         # 将重放样本加入训练集
         exampler_dataset = self.get_exampler_dataset()
+        replay_dataset = None
         if exampler_dataset is not None:
-            train_dataset = ConcatDataset([train_dataset, exampler_dataset])
+            replay_x, replay_y = exampler_dataset.tensors
+            replay_x = process_data_chn(replay_x.numpy())
+            replay_dataset = TensorDataset(replay_x.float(), replay_y)
+
+        if exampler_dataset is not None:
+            train_dataset = ConcatDataset([train_dataset, replay_dataset])
             shape_info = f"After replay, total num of trials for train: {len(train_dataset)}"
             self.log.record(shape_info)
             print(shape_info)
 
         self.class_weights = self._compute_class_weights(train_dataset)
 
-        if balance_sample:
+        if replay_dataset is not None and self.replay_batch_size > 0:
+            train_loader = FixedReplayDataLoader(
+                new_dataset=TensorDataset(Xtr.float(), Ytr),
+                replay_dataset=replay_dataset,
+                batch_size=self.batch_size,
+                replay_batch_size=self.replay_batch_size,
+                pin_memory=True,
+            )
+        elif balance_sample:
             train_loader = self._balance_sample_train_loader(train_dataset=train_dataset)
         else:
             train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False, pin_memory=True)

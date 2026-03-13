@@ -96,6 +96,7 @@ numclass = _get_env_int('ICARL_INIT_NUMCLASS', 2)
 batch_size = _get_env_int('ICARL_BATCH_SIZE', 32)
 balance_sample = _get_env_bool('ICARL_BALANCE_SAMPLE', True)
 balance_power = _get_env_float('ICARL_BALANCE_POWER', 0.5)
+replay_batch_size = _get_env_int('ICARL_REPLAY_BATCH_SIZE', 0)
 num_stages = _get_env_int('ICARL_NUM_STAGES', 3)
 num_seeds = _get_env_int('ICARL_NUM_SEEDS', 3)
 epochs = _get_env_int('ICARL_EPOCHS', 30)
@@ -162,7 +163,7 @@ for seed in range(1, num_seeds+1):
     log.log_init()
 
     state_log = f'Replay memory size:{memory_size}, learning_rate:{learning_rate}, epochs:{epochs}, stage_epochs:{stage_epochs}, \
-        is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, balance_power:{balance_power}, is_contrastive_loss:{is_contrastive_loss},\
+        is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, balance_power:{balance_power}, replay_batch_size:{replay_batch_size}, is_contrastive_loss:{is_contrastive_loss},\
             lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, weighted_crossentropy = {weighted_crossentropy}, trainable_part = {trainable_part}, \
                 use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, \
                     use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}, \
@@ -212,7 +213,7 @@ for seed in range(1, num_seeds+1):
 
     model=CBiCaRL(seed,result_dir, data_path, is_cross_session, numclass,\
         feature_extractor,batch_size,\
-        memory_size, balance_sample, balance_power, is_contrastive_loss, lambda_contrastive_loss, temperature, \
+        memory_size, balance_sample, balance_power, replay_batch_size, is_contrastive_loss, lambda_contrastive_loss, temperature, \
         use_proto_align, proto_align_lambda, \
         task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, weighted_crossentropy,\

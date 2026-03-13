@@ -6,7 +6,7 @@ import os
 import torch.nn as nn
 import random
 from collections import defaultdict
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler, WeightedRandomSampler
 import torch.nn.functional as F
 from channel_list import *
 from scipy.spatial.distance import cdist
@@ -222,8 +222,22 @@ def process_and_replace_loader(loader,ischangechn,dataset):
         'num_workers': loader.num_workers,
         'pin_memory': loader.pin_memory,
         'drop_last': loader.drop_last,
-        'shuffle': isinstance(loader.sampler, torch.utils.data.RandomSampler)
     }
+
+    if isinstance(loader.sampler, WeightedRandomSampler):
+        new_sampler = WeightedRandomSampler(
+            weights=loader.sampler.weights.clone().detach(),
+            num_samples=loader.sampler.num_samples,
+            replacement=loader.sampler.replacement,
+        )
+        loader_args['sampler'] = new_sampler
+        loader_args['shuffle'] = False
+    elif isinstance(loader.sampler, RandomSampler):
+        loader_args['shuffle'] = True
+    elif isinstance(loader.sampler, SequentialSampler):
+        loader_args['shuffle'] = False
+    else:
+        loader_args['shuffle'] = False
     
     return torch.utils.data.DataLoader(new_dataset, **loader_args)
 
@@ -251,5 +265,4 @@ def pad_missing_channels_diff(x, target_channels, actual_channels):
         padded[b] = W @ x[b]  
     
     return padded
-
 
