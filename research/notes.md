@@ -43,3 +43,19 @@
 - score: 55.87
 - why: the mild age-memory combination may be the most stable way to add exemplar bias on top of oldweight2 without over-hurting task2
 - change: promote combined oldweight2+age-memory(0.25) candidate to 3-seed confirm
+
+## 2026-03-14T00:38:07 `lwf015_replaymix2_adapter16_mem36_oldweight25_short`
+- verdict: promoted_to_confirm
+- mode: screen
+- task1/task2/task3: 85.88 / 60.26 / 46.53
+- score: 58.52
+- why: if power 2.0 still under-regularizes the oldest class, a slightly stronger old-class weight of 2.5 may push task3 further without the instability of changing replay or memory budgets
+- change: true LwF on replaymix2+adapter16+mem36 with old-class BCE power 2.5
+
+## 2026-03-14T00:48:11 `lwf015_replaymix2_adapter16_mem36_oldweight25_confirm`
+- verdict: confirm_completed
+- mode: full
+- task1/task2/task3: 85.73 / 58.49 / 42.72
+- score: 56.05
+- why: oldweight 2.5 may improve task3 retention beyond oldweight2 if the gain is coming from stronger oldest-class protection rather than overfitting
+- change: promote old-class BCE power 2.5 candidate to 3-seed confirm
