@@ -26,16 +26,37 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class FixedReplayDataLoader:
-    def __init__(self, new_dataset, replay_dataset, batch_size, replay_batch_size, pin_memory=True):
+    def __init__(self, new_dataset, replay_dataset, batch_size, replay_batch_size, replay_age_power=0.0, pin_memory=True):
         self.new_dataset = new_dataset
         self.replay_dataset = replay_dataset
         self.batch_size = batch_size
         self.replay_batch_size = max(0, min(replay_batch_size, batch_size - 1))
         self.new_batch_size = batch_size - self.replay_batch_size
+        self.replay_age_power = replay_age_power
         self.pin_memory = pin_memory
         self.drop_last = False
         self.num_workers = 0
         self.dataset = ConcatDataset([new_dataset, replay_dataset])
+
+    def _build_replay_sampler(self):
+        if self.replay_age_power <= 0:
+            return None
+
+        replay_labels = extract_labels_from_dataset(self.replay_dataset)
+        if replay_labels.size == 0:
+            return None
+
+        replay_labels = torch.tensor(replay_labels, dtype=torch.long)
+        oldest_rank = int(replay_labels.max().item()) + 1
+        sample_weights = torch.tensor(
+            [(oldest_rank - int(label.item())) ** self.replay_age_power for label in replay_labels],
+            dtype=torch.float32,
+        )
+        return WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True,
+        )
 
     def __len__(self):
         return int(np.ceil(len(self.new_dataset) / max(1, self.new_batch_size)))
@@ -48,10 +69,12 @@ class FixedReplayDataLoader:
             drop_last=False,
             pin_memory=self.pin_memory,
         )
+        replay_sampler = self._build_replay_sampler()
         replay_loader = DataLoader(
             self.replay_dataset,
             batch_size=self.replay_batch_size,
-            shuffle=True,
+            sampler=replay_sampler,
+            shuffle=replay_sampler is None,
             drop_last=False,
             pin_memory=self.pin_memory,
         ) if self.replay_batch_size > 0 else None
@@ -71,10 +94,10 @@ class FixedReplayDataLoader:
 
 class CBiCaRL:
     def __init__(self, seed, result_dir, data_path, is_cross_session, numclass, feature_extractor, \
-        batch_size, memory_size, balance_sample, balance_power, replay_batch_size, is_contrastive_loss, lambda_contrastive_loss, temperature,\
+        batch_size, memory_size, use_age_memory, age_memory_power, balance_sample, balance_power, replay_batch_size, use_age_replay, age_replay_power, is_contrastive_loss, lambda_contrastive_loss, temperature,\
         use_proto_align, proto_align_lambda, \
         task_adapter_lr_mult, \
-        use_lwf, lwf_lambda, lwf_T, weighted_crossentropy, \
+        use_lwf, lwf_lambda, lwf_T, weighted_crossentropy, old_class_weight_power, \
             epochs, stage_epochs, learning_rate, is_align, log, current_date):
         super().__init__()
 
@@ -97,12 +120,16 @@ class CBiCaRL:
         self.balance_sample =balance_sample
         self.balance_power = balance_power
         self.replay_batch_size = replay_batch_size
+        self.use_age_replay = use_age_replay
+        self.age_replay_power = age_replay_power
 
         self.train_loader=None
         self.test_loader=None
 
         # 重放参数
         self.memory_size = memory_size
+        self.use_age_memory = use_age_memory
+        self.age_memory_power = age_memory_power
         self.exemplar_set = []
         self.class_mean_set = []
 
@@ -121,6 +148,7 @@ class CBiCaRL:
         self.lwf_T = lwf_T
 
         self.weighted_crossentropy = weighted_crossentropy
+        self.old_class_weight_power = old_class_weight_power
         self.class_weights = None
 
         self.counts_train_perclass = np.zeros(shape=(4,)) # 用于统计累积各类别训练样本数目
@@ -230,6 +258,7 @@ class CBiCaRL:
                 replay_dataset=replay_dataset,
                 batch_size=self.batch_size,
                 replay_batch_size=self.replay_batch_size,
+                replay_age_power=self.age_replay_power if self.use_age_replay else 0.0,
                 pin_memory=True,
             )
         elif balance_sample:
@@ -258,6 +287,16 @@ class CBiCaRL:
         class_weights[valid_mask] = 1.0 / torch.pow(class_counts[valid_mask], self.balance_power)
         class_weights = class_weights / class_weights[valid_mask].mean()
         return class_weights.to(device)
+
+    def _compute_old_class_weights(self, old_k):
+        if old_k <= 0 or self.old_class_weight_power <= 0:
+            return None
+        weights = torch.tensor(
+            [(old_k - idx) ** self.old_class_weight_power for idx in range(old_k)],
+            dtype=torch.float32,
+            device=device,
+        )
+        return weights / weights.mean()
 
     def _balance_sample_train_loader(self,train_dataset):
         '''
@@ -384,12 +423,17 @@ class CBiCaRL:
                 
                 target.scatter_(1, y.reshape(-1,1), 1.0)
                 
+                bce_matrix = F.binary_cross_entropy_with_logits(logits, target, reduction='none')
                 if self.weighted_crossentropy and self.class_weights is not None:
-                    bce_matrix = F.binary_cross_entropy_with_logits(logits, target, reduction='none')
                     active_weights = self.class_weights[:logits.size(1)].view(1, -1)
-                    loss_bce = (bce_matrix * active_weights).mean()
-                else:
-                    loss_bce = F.binary_cross_entropy_with_logits(logits, target)
+                    bce_matrix = bce_matrix * active_weights
+
+                if self.prev_model is not None:
+                    old_class_weights = self._compute_old_class_weights(old_k)
+                    if old_class_weights is not None:
+                        bce_matrix[:, :old_k] = bce_matrix[:, :old_k] * old_class_weights.view(1, -1)
+
+                loss_bce = bce_matrix.mean()
 
                 if self.is_contrastive_loss:
                     loss_con = self.supervised_contrastive_loss(features, y, temperature=self.temperature)
@@ -400,6 +444,13 @@ class CBiCaRL:
                 if self.use_proto_align and self.old_class_prototypes is not None:
                     loss_proto = self.prototype_alignment_loss(features, y, self.old_class_prototypes)
                     loss = loss + self.proto_align_lambda * loss_proto
+
+                if self.use_lwf and self.prev_model is not None:
+                    student_old_logits = logits[:, :old_k]
+                    teacher_old_probs = torch.sigmoid(old_logits / self.lwf_T)
+                    student_old_probs = torch.sigmoid(student_old_logits / self.lwf_T)
+                    loss_lwf = F.binary_cross_entropy(student_old_probs, teacher_old_probs)
+                    loss = loss + self.lwf_lambda * (self.lwf_T ** 2) * loss_lwf
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -576,9 +627,8 @@ class CBiCaRL:
 
     def afterTrain(self):
         self.model.eval()
-        m = int(self.memory_size/self.numclass)
-        # m = min(m, )
-        self._reduce_exemplar_sets(m)
+        class_budgets = self._compute_memory_budgets()
+        self._reduce_exemplar_sets(class_budgets)
 
         # 按照类别选择样本重放
         start_idx = 0 if self.stage == 1 else self.numclass-1
@@ -588,7 +638,7 @@ class CBiCaRL:
             print(construct_info)
             class_list = np.arange(i, i+1)
             X_train, _ = self.dataset.get_train_data(self.train_idt, class_list)
-            self._construct_exemplar_set(X_train,m)
+            self._construct_exemplar_set(X_train, class_budgets[i])
 
         # 计算类别均值并评估
         self.compute_exemplar_class_mean()
@@ -610,12 +660,34 @@ class CBiCaRL:
         
         return subject_class_acc_matrix
 
-    def _reduce_exemplar_sets(self, m):
+    def _compute_memory_budgets(self):
+        if self.numclass <= 0:
+            return []
+        if not self.use_age_memory or self.age_memory_power <= 0:
+            base = self.memory_size // self.numclass
+            budgets = [base for _ in range(self.numclass)]
+            for idx in range(self.memory_size - sum(budgets)):
+                budgets[idx % self.numclass] += 1
+            return budgets
+
+        weights = np.array([(self.numclass - idx) ** self.age_memory_power for idx in range(self.numclass)], dtype=np.float64)
+        weights = weights / weights.sum()
+        raw = weights * self.memory_size
+        budgets = np.floor(raw).astype(int)
+        remainder = int(self.memory_size - budgets.sum())
+        if remainder > 0:
+            order = np.argsort(-(raw - budgets))
+            for idx in order[:remainder]:
+                budgets[idx] += 1
+        return budgets.tolist()
+
+    def _reduce_exemplar_sets(self, class_budgets):
         '''
             减少前面类别的重放样本
         '''
         for index in range(len(self.exemplar_set)):
-            self.exemplar_set[index] = self.exemplar_set[index][:m]
+            budget = class_budgets[index]
+            self.exemplar_set[index] = self.exemplar_set[index][:budget]
             reduce_info = f'Size of class {index} examplar: {str(len(self.exemplar_set[index]))}'
             self.log.record(reduce_info)
             print(reduce_info)

@@ -75,10 +75,18 @@ def run_experiment(args):
     env["ICARL_BALANCE_SAMPLE"] = "true" if args.balance_sample else "false"
     env["ICARL_BALANCE_POWER"] = str(args.balance_power)
     env["ICARL_REPLAY_BATCH_SIZE"] = str(args.replay_batch_size)
+    env["ICARL_USE_AGE_REPLAY"] = "true" if args.use_age_replay else "false"
+    env["ICARL_AGE_REPLAY_POWER"] = str(args.age_replay_power)
     env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
     env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
+    env["ICARL_USE_AGE_MEMORY"] = "true" if args.use_age_memory else "false"
+    env["ICARL_AGE_MEMORY_POWER"] = str(args.age_memory_power)
     env["ICARL_TRAINABLE_PART"] = args.trainable_part
     env["ICARL_WEIGHTED_CE"] = "true" if args.weighted_ce else "false"
+    env["ICARL_OLD_CLASS_WEIGHT_POWER"] = str(args.old_class_weight_power)
+    env["ICARL_USE_LWF"] = "true" if args.use_lwf else "false"
+    env["ICARL_LWF_LAMBDA"] = str(args.lwf_lambda)
+    env["ICARL_LWF_T"] = str(args.lwf_t)
     env["ICARL_USE_PROTO_ALIGN"] = "true" if args.use_proto_align else "false"
     env["ICARL_PROTO_ALIGN_LAMBDA"] = str(args.proto_align_lambda)
     env["ICARL_USE_TASK_ADAPTER"] = "true" if args.use_task_adapter else "false"
@@ -163,11 +171,21 @@ def main():
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--stage-epochs", default="")
     parser.add_argument("--memory-size", type=int, default=24)
+    parser.add_argument("--use-age-memory", dest="use_age_memory", action="store_true")
+    parser.add_argument("--no-use-age-memory", dest="use_age_memory", action="store_false")
+    parser.set_defaults(use_age_memory=False)
+    parser.add_argument("--age-memory-power", type=float, default=1.0)
     parser.add_argument("--lr", type=float)
     parser.add_argument("--trainable-part", default="all")
     parser.add_argument("--use-weighted-ce", dest="weighted_ce", action="store_true")
     parser.add_argument("--no-use-weighted-ce", dest="weighted_ce", action="store_false")
     parser.set_defaults(weighted_ce=False)
+    parser.add_argument("--old-class-weight-power", type=float, default=0.0)
+    parser.add_argument("--use-lwf", dest="use_lwf", action="store_true")
+    parser.add_argument("--no-use-lwf", dest="use_lwf", action="store_false")
+    parser.set_defaults(use_lwf=False)
+    parser.add_argument("--lwf-lambda", type=float, default=0.1)
+    parser.add_argument("--lwf-t", type=float, default=2.0)
     parser.add_argument("--use-proto-align", action="store_true")
     parser.add_argument("--no-use-proto-align", dest="use_proto_align", action="store_false")
     parser.set_defaults(use_proto_align=False)
@@ -213,6 +231,10 @@ def main():
     parser.set_defaults(balance_sample=True)
     parser.add_argument("--balance-power", type=float, default=0.5)
     parser.add_argument("--replay-batch-size", type=int, default=0)
+    parser.add_argument("--use-age-replay", dest="use_age_replay", action="store_true")
+    parser.add_argument("--no-use-age-replay", dest="use_age_replay", action="store_false")
+    parser.set_defaults(use_age_replay=False)
+    parser.add_argument("--age-replay-power", type=float, default=1.0)
     parser.add_argument("--use-align", action="store_true")
     parser.add_argument("--no-use-align", dest="use_align", action="store_false")
     parser.set_defaults(use_align=True)
