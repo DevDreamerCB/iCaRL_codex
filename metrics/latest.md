@@ -1,31 +1,31 @@
 # Latest Metrics
 
-- run tag: `20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm`
+- run tag: `20260316_144946_20260316_144941_lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_hardreplay10s3_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm`
 - epochs: ``
 - seeds: `3`
-- gpu: `4`
-- note: `lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm`
-- stage epochs: `None`
+- gpu: `0`
+- note: `lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_hardreplay10s3_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm`
+- stage epochs: `[10, 12, 12]`
 - trainable part: `all`
 - proto align: `False` @ `0.1`
-- task1 / stage1 total: `85.73`
-- task2 / stage2 total: `58.41`
-- task3 / stage3 total: `42.22`
-- score: `55.78`
-- log: `20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm/log_MIRepNet_EA_2026-03-13_17_01_35.txt;20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm/log_MIRepNet_EA_2026-03-13_17_04_55.txt;20260314_010135_20260314_010131_lwf015_replaymix2_adapter16_mem42_oldweight2_agemem025_confirm/log_MIRepNet_EA_2026-03-13_17_08_09.txt`
+- task1 / stage1 total: `84.18`
+- task2 / stage2 total: `60.75`
+- task3 / stage3 total: `49.36`
+- score: `59.74`
+- log: `20260316_144946_20260316_144941_lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_hardreplay10s3_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm/log_MIRepNet_EA_2026-03-16_06_49_46.txt;20260316_144946_20260316_144941_lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_hardreplay10s3_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm/log_MIRepNet_EA_2026-03-16_06_52_14.txt;20260316_144946_20260316_144941_lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_hardreplay10s3_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm/log_MIRepNet_EA_2026-03-16_06_53_55.txt`
 
 ## Best Full Confirm So Far
-- run tag: `20260312_214625_20260312_214621_no_contrastive_adapter16_s2_lr15_confirm`
-- note: `no_contrastive_adapter16_s2_lr15_confirm`
-- task3 total: `41.55`
-- task2 total: `61.19`
-- task1 total: `85.34`
-- score: `56.2`
+- run tag: `20260316_132136_20260316_132132_lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm`
+- note: `lwf0175T15_normnmehybrid_s3old04_ptblend02s3new_affine2_adapter16_mem36_oldweight3125_stage101212_stagefd003_taskaffine_s3_confirm`
+- task3 total: `49.36`
+- task2 total: `60.75`
+- task1 total: `84.18`
+- score: `59.74`
 
 ## Best Screen So Far
-- run tag: `20260314_003634_20260314_003630_lwf015_replaymix2_adapter16_mem36_oldweight25_short`
-- note: `lwf015_replaymix2_adapter16_mem36_oldweight25_short`
-- task3 total: `46.53`
-- task2 total: `60.26`
-- task1 total: `85.88`
-- score: `58.52`
+- run tag: `20260315_111904_20260315_111900_lwf0175T15_normnme_adapter16_mem36_oldweight3375_stage101212_stagefd0025_taskaffine_s3_short`
+- note: `lwf0175T15_normnme_adapter16_mem36_oldweight3375_stage101212_stagefd0025_taskaffine_s3_short`
+- task3 total: `49.65`
+- task2 total: `61.96`
+- task1 total: `84.72`
+- score: `60.36`

@@ -2,6 +2,19 @@ import os
 import numpy as np
 from scipy.linalg import fractional_matrix_power
 
+def compute_ea_reference(x):
+    cov = np.zeros((x.shape[0], x.shape[1], x.shape[1]))
+    for i in range(x.shape[0]):
+        cov[i] = np.cov(x[i])
+    ref_ea = np.mean(cov, 0)
+    return fractional_matrix_power(ref_ea, -0.5)
+
+def apply_ea_reference(x, sqrt_ref_ea):
+    x_ea = np.zeros(x.shape, dtype=x.dtype)
+    for i in range(x.shape[0]):
+        x_ea[i] = np.dot(sqrt_ref_ea, x[i])
+    return x_ea
+
 def data_alignment(X, num_subjects):
     '''
     :param X: np array, EEG data
@@ -32,15 +45,8 @@ def EA(x):
     XEA : numpy array
         data of shape (num_samples, num_channels, num_time_samples)
     """
-    cov = np.zeros((x.shape[0], x.shape[1], x.shape[1]))
-    for i in range(x.shape[0]):
-        cov[i] = np.cov(x[i])
-    refEA = np.mean(cov, 0)
-    sqrtRefEA = fractional_matrix_power(refEA, -0.5)
-    XEA = np.zeros(x.shape)
-    for i in range(x.shape[0]):
-        XEA[i] = np.dot(sqrtRefEA, x[i])
-    return XEA
+    sqrt_ref_ea = compute_ea_reference(x)
+    return apply_ea_reference(x, sqrt_ref_ea)
 
 # if not args.cross_session:
 #     data_path = '/data1/bochen/continental_leaning/data82/'
@@ -146,10 +152,11 @@ class MIData():
 
         print("✅ 所有被试数据已分离并保存！")
 
-    def _load_data(self, is_train, idt):
+    def _load_data(self, is_train, idt, return_subject_ids=False):
 
         X = []
         y = []
+        subject_ids = []
 
         for sid in idt:
             if is_train:
@@ -160,32 +167,49 @@ class MIData():
             data = np.load(fname)
             X.append(data['X'])
             y.append(data['y'])
+            if return_subject_ids:
+                subject_ids.append(np.full(shape=(data['y'].shape[0],), fill_value=int(sid), dtype=np.int64))
 
         X = np.concatenate(X, axis=0)
         y = np.concatenate(y, axis=0)
-  
+        if return_subject_ids:
+            subject_ids = np.concatenate(subject_ids, axis=0)
+            return X, y, subject_ids
+
         return X, y
             
-    def get_train_data(self, train_idt, class_list):
+    def get_train_data(self, train_idt, class_list, return_subject_ids=False, apply_align=None):
         '''
             获取训练数据
         '''
         # 导入数据
-        
-        X_train, y_train = self._load_data(is_train=True, idt=train_idt)
+
+        if return_subject_ids:
+            X_train, y_train, subject_ids = self._load_data(is_train=True, idt=train_idt, return_subject_ids=True)
+        else:
+            X_train, y_train = self._load_data(is_train=True, idt=train_idt)
         # 筛选指定任务的数据
-        X_train, y_train = filter(X_train, y_train, class_list)
-        if self.is_align:
+        mask = np.isin(y_train, class_list)
+        X_train, y_train = X_train[mask], y_train[mask]
+        if return_subject_ids:
+            subject_ids = subject_ids[mask]
+        if apply_align is None:
+            apply_align = self.is_align
+        if apply_align:
             X_train = data_alignment(X_train, len(train_idt))
+        if return_subject_ids:
+            return X_train, y_train, subject_ids
         return X_train, y_train
 
-    def get_test_data(self, test_idt, class_list):
+    def get_test_data(self, test_idt, class_list, apply_align=None):
         '''
             只获取测试数据
         '''
         X_test, y_test = self._load_data(is_train=False, idt=test_idt)
         X_test, y_test = filter(X_test, y_test, class_list)
-        if self.is_align:
+        if apply_align is None:
+            apply_align = self.is_align
+        if apply_align:
             X_test = data_alignment(X_test, len(test_idt))
         return X_test, y_test
 

@@ -3,3 +3,7 @@ logs/
 tensorboard_logs/
 *.pyc
 metrics/last_run_stdout.log
+metrics/*.log
+metrics/*.pid
+metrics/events.jsonl
+metrics/agent_status.md
