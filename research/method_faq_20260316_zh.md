@@ -335,3 +335,56 @@ prototype blend 的意思是：
 
 - 从问题本身看，`stage1` 不值得优先做 hybrid
 - 实验上也证明 `stage3-only` 更合理
+
+## 14. adapter / task-affine 这里算不算泄漏 task id？
+
+严格说，它**使用了阶段级别的 side information**，但**没有泄漏样本标签**，也**不是按样本单独给 task id**。
+
+当前代码的实际行为是：
+
+- 在每个训练/测试阶段开始时，统一执行一次：
+  - `self.model.feature.set_current_task(self.stage - 1)`
+- 代码位置：
+  - [iCaRL.py](/data1/bochen/cbcontinual/iCaRL_codex/iCaRL.py#L353)
+- 然后 embedding 里的 `task-affine`、`task-bn`，以及 `task adapter / task prompt / task lora`
+  都会统一切到这一阶段对应的参数
+- 代码位置：
+  - [mlm.py](/data1/bochen/cbcontinual/iCaRL_codex/mlm.py#L434)
+
+所以它不是：
+
+- 对每个测试样本单独预测“你来自哪个 task”
+- 然后再切对应模块
+
+而是：
+
+- `stage1` 整个评估过程统一用 task 0
+- `stage2` 整个评估过程统一用 task 1
+- `stage3` 整个评估过程统一用 task 2
+
+这意味着：
+
+1. 从“有没有标签泄漏”看  
+没有。因为模块选择不依赖类别标签，也不依赖样本真值。
+
+2. 从“是不是严格 task-agnostic class-incremental inference”看  
+不完全是。因为模型确实知道“当前处于第几个增量阶段”。
+
+3. 从你这个场景的实际部署含义看  
+如果系统本来就是分阶段上线的，那么“当前系统已经处于 stage3”这个信息是天然已知的，因而更准确地说它是**stage-conditioned model**，不是标签泄漏。
+
+如果你后面论文里想写得更严谨，我建议这样表述：
+
+- 本文中的 `task-affine` 和 `task-specific adapter` 不使用样本级任务标签进行动态路由；
+- 它们只依赖当前增量阶段这一全局状态；
+- 因此不属于类别标签泄漏，但属于阶段条件化参数。
+
+如果你想做更严格的补充实验，可以再做两种对照：
+
+- 测试时固定所有样本都走同一套共享参数，不切 task-specific 分支
+- 或者在 `stage3` 评估时禁用 `task-affine / task-adapter`，看最终 `task3` 掉多少
+
+这样就能定量说明：
+
+- 这些模块到底是在“合理利用阶段信息”
+- 还是在“过度依赖 task-conditioned 参数”
