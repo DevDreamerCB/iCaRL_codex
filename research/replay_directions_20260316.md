@@ -1,223 +1,221 @@
-# Replay Directions 2026-03-16
+# 重放方向调研与当前判断
 
-## Goal
+日期：`2026-03-16`
 
-Identify replay-related continual learning methods that are most likely to improve this repo under the current constraints:
+## 1. 目的
 
-- keep the pretrained backbone intact
-- prefer small changes inside `iCaRL_codex`
-- prioritize `task3`, then `task2`
-- keep memory budget fixed unless explicitly studying cost-performance tradeoffs
+本文只整理“与 replay 相关、且对当前代码库仍有参考价值”的方法方向，目标是回答两个问题：
 
-## Current Replay Baseline In This Repo
+1. 在当前约束下，哪些 replay 方法最可能继续提升 `task3`
+2. 哪些 replay 方法已经尝试过，可以暂时停止投入
 
-Current strongest line already includes:
+当前约束为：
 
-- fixed memory budget (`mem36`)
-- herding-style exemplar selection
+- 保持预训练 backbone 主体不变
+- 尽量只在 `iCaRL_codex` 内做小改动
+- 优先提升 `task3`，其次 `task2`
+- 默认固定 memory 预算，除非专门研究成本与性能权衡
+
+## 2. 当前 replay 基线是什么
+
+当前最强主线里，replay 相关的基础组件已经包括：
+
+- 固定 exemplar memory：`mem36`
+- herding 风格 exemplar 选择
 - `replay_batch_size=2`
-- stage3-only prototype refinement (`new_only`)
-- hybrid `NME + logits`
-- old/new balancing through `oldweight`, `LwF`, and stage3-only feature distillation
+- `stage3-only + new_only` prototype refinement
+- `hybrid NME + logits`
+- 通过 `LwF + oldweight + stage3 feature distill` 做 old/new 平衡
 
-This means new replay work should preferably improve one of:
+所以后续的 replay 研究，不应只是再加一个全局偏置旋钮，而应主要回答：
 
-- which samples are replayed
-- how replay samples are used during training
-- how replay interacts with current-task samples
+- replay 哪些样本更值得保留
+- replay 样本在训练中应该怎样使用
+- replay 如何更好地与当前阶段样本交互
 
-not simply add another global bias knob.
+## 3. 文献里最值得借鉴的 replay 方向
 
-## Most Relevant Replay Papers
+### 3.1 ReCIL
 
-### 1. ReCIL
+为什么重要：
 
-Why it matters:
+- 它直接针对“跨被试类增量运动想象分类”
+- replay 设计明确区分了 `global replay` 与 `local replay`
 
-- it is directly about cross-subject class-incremental motor imagery
-- its replay design is explicitly split into `global` and `local` replay
+最值得借鉴的思想：
 
-Most transferable ideas:
+- replay 不仅可以存局部 exemplar，也可以存“跨被试对齐信息”
+- exemplar 选择应同时考虑代表性和多样性
+- 当特征空间距离噪声较大时，可考虑先降维再做 replay selection
 
-- use replay not only for local exemplars, but also for subject-level alignment information
-- replay sample selection should consider both representativeness and diversity
-- dimensionality reduction can help replay selection when feature-space distances are noisy
+来源：
 
-Source:
+- Yang et al., ReCIL, IEEE TBME 2025  
+  本地 PDF：[/data1/bochen/cbcontinual/iCaRL_codex/2025_CS-CIL_TBME_Yang.pdf](/data1/bochen/cbcontinual/iCaRL_codex/2025_CS-CIL_TBME_Yang.pdf)
 
-- Yang et al., "ReCIL: Rehearsal-Based Class Incremental Learning for Cross-Subject Motor Imagery Classification", IEEE TBME 2025  
-  PDF: [/data1/bochen/cbcontinual/iCaRL_codex/2025_CS-CIL_TBME_Yang.pdf](/data1/bochen/cbcontinual/iCaRL_codex/2025_CS-CIL_TBME_Yang.pdf)
+当前代码库判断：
 
-Repo verdict:
+- 论文里的 replay 选样思想已经部分试过
+- `subject_kmeans`、`subject_herding`、`subject_diverse_herding` 在本仓库中都偏弱
+- 真正还值得保留的是“对齐信息 replay”这部分启发，而不是继续抠局部选样细节
 
-- replay selection ideas from this paper were partly tested already
-- `subject_kmeans`, `subject_herding`, `subject_diverse_herding` were weak in this codebase
-- the remaining promising part is `global replay of alignment information`, not the local replay heuristic itself
+### 3.2 MIR
 
-### 2. MIR: Maximally Interfered Retrieval
+核心思想：
 
-Core idea:
+- 不是随机 replay，而是优先重放“最容易被当前更新破坏”的样本
 
-- replay the memory samples whose predictions would be harmed the most by the next update
+来源：
 
-Source:
-
-- Aljundi et al., "Online Continual Learning with Maximal Interfered Retrieval", NeurIPS 2019  
+- Aljundi et al., MIR, NeurIPS 2019  
   https://papers.nips.cc/paper_files/paper/2019/hash/15825aee15eb335cc13f9b559f166ee8-Abstract.html
 
-Why it may fit here:
+为什么适合这里：
 
-- this repo already uses a replay buffer; MIR changes retrieval, not the backbone
-- it matches the user goal of protecting old classes in `task3`
+- 当前仓库已经有 replay buffer
+- 改 retrieval，不改 backbone
+- 非常贴合 `task3` 旧类保持这个目标
 
-Cost/risk:
+判断：
 
-- medium
-- requires scoring replay candidates with a look-ahead criterion
-- more invasive than current prototype calibration
+- 方向有价值
+- 但比当前 `hard replay / MIR-lite` 要更复杂
+- 如果后续继续做 replay family，这条仍然值得作为中期目标
 
-Repo verdict:
+### 3.3 DER / DER++
 
-- promising, but not the next easiest step
-- worth trying after lighter replay-usage methods are exhausted
+核心思想：
 
-### 3. DER / DER++
+- replay 样本不仅存输入和标签，还存历史 logits
+- 在 replay 时直接蒸馏历史输出
 
-Core idea:
+来源：
 
-- store old examples together with historical logits and distill them during replay
-- DER++ adds a replay label loss on top of logit replay
-
-Source:
-
-- Buzzega et al., "Dark Experience for General Continual Learning", NeurIPS 2020  
+- Buzzega et al., DER / DER++, NeurIPS 2020  
   https://papers.nips.cc/paper_files/paper/2020/file/b704ea2c39778f07c617f6b7ce480e9e-Paper.pdf
 
-Why it may fit here:
+为什么适合这里：
 
-- this repo already has `prev_model` and LwF machinery
-- a DER-like replay target is easier to add than MIR or ASER
-- it directly addresses stability of replayed examples
+- 当前代码已经有 `prev_model` 和 `LwF` 机制
+- DER 风格比 MIR 更容易往现有框架里接
 
-Cost/risk:
+当前判断：
 
-- low to medium
-- requires storing replay logits or computing them before memory revision
+- 已做了 `DER-lite`
+- short 最好约 `49.27`
+- 比当前 strongest short 弱
+- 目前先判为“合理但不够强”
 
-Repo verdict:
+### 3.4 X-DER
 
-- very relevant
-- likely the most promising next replay family after current prototype/hybrid tuning
+核心思想：
 
-### 4. X-DER
+- 在 DER 基础上进一步做 memory revision 和 class-incremental 校正
 
-Core idea:
+来源：
 
-- extend DER with memory revision and future-aware class handling
-
-Source:
-
-- Boschini et al., "Class-Incremental Continual Learning into the eXtended DER-verse", TPAMI / arXiv 2022  
+- Boschini et al., X-DER, 2022  
   https://arxiv.org/abs/2201.00766
 
-Why it may fit here:
+判断：
 
-- this repo is already beyond vanilla replay and already uses post-hoc calibration
-- X-DER is directly class-incremental, not only online continual learning
+- 理论上很强
+- 但实现复杂度明显更高
+- 对当前毕业设计来说，不是优先补丁，而是后续设计参考
 
-Cost/risk:
+### 3.5 RAR
 
-- medium to high
-- more moving parts than DER++
+核心思想：
 
-Repo verdict:
+- 对 replay 样本做重复和增强，提升 rehearsal 强度
 
-- conceptually strong
-- too large as the next immediate patch, but useful as a design reference
+来源：
 
-### 5. ASER
-
-Core idea:
-
-- score memory samples using adversarial Shapley value, favoring points that preserve old boundaries while challenging the current update
-
-Source:
-
-- Shim et al., "Online Class-Incremental Continual Learning with Adversarial Shapley Value", AAAI 2021  
-  https://arxiv.org/abs/2009.00093
-
-Why it may fit here:
-
-- it is a replay selection method, so it respects the pretrained backbone constraint
-
-Cost/risk:
-
-- high
-- selection is much heavier than herding and much harder to explain/maintain
-
-Repo verdict:
-
-- not a good next implementation for this repo
-- too expensive and too far from the current lightweight strategy
-
-### 6. Gradient-Matching Coresets
-
-Core idea:
-
-- choose replay memory so its gradients match the full dataset gradients
-
-Source:
-
-- Balles et al., "Gradient-Matching Coresets for Rehearsal-Based Continual Learning", arXiv 2022  
-  https://arxiv.org/abs/2203.14544
-
-Why it may fit here:
-
-- it targets replay sample quality directly
-
-Cost/risk:
-
-- high
-- complicated to plug into this repo and not very thesis-friendly compared with simpler replay heuristics
-
-Repo verdict:
-
-- interesting academically
-- not a priority for this project
-
-### 7. RAR: Repeated Augmented Rehearsal
-
-Core idea:
-
-- strengthen rehearsal by repeating and augmenting replay
-
-Source:
-
-- Zhang et al., "A simple but strong baseline for online continual learning: Repeated Augmented Rehearsal", NeurIPS 2022  
+- Zhang et al., Repeated Augmented Rehearsal, NeurIPS 2022  
   https://arxiv.org/abs/2209.13917
 
-Why it may fit here:
+判断：
 
-- the current repo already shows that replay usage matters as much as replay selection
-- repeated/augmented rehearsal is easy to adapt to EEG if augmentation is class-safe
+- 思想上适合当前仓库
+- 但当前实现出的 `RAR-lite / replay-aware augmentation` 不够强
+- 更适合作为“启发”，不建议照搬
 
-Cost/risk:
+## 4. 当前仓库里已经试过的 replay 相关 family
 
-- low to medium
-- safer than MIR/ASER
+### 4.1 已判弱
 
-Repo verdict:
+- 左右镜像 replay 增强
+- `subject_kmeans`
+- `subject_herding`
+- `subject_diverse_herding`
+- `global_kmeans`
+- `pca_kmeans`
+- `DER-lite`
+- `RAR-lite`
+- 当前这版 replay-aware mixup
 
-- useful as inspiration
-- better to adapt the idea as `replay-aware augmentation` instead of copying the exact online OCL procedure
+这些方法的问题通常有两种：
 
-### 8. RehearMixup
+1. short 有信号，但 full confirm 站不住
+2. 能抬一点 `task2`，但会伤 `task3`
 
-Core idea:
+### 4.2 仍可视作“平局备选”的
 
-- improve rehearsal by doing mixup between current and replay data, or within current/replay subsets
+- `hard replay / MIR-lite`
 
-Source:
+代表结果：
+
+- `hardreplay10s3_confirm`
+- `84.18 / 60.75 / 49.36`
+
+判断：
+
+- 与当前 best full 持平
+- 说明“更有针对性的 replay retrieval”方向本身没有错
+- 但目前这版实现还没带来额外突破
+
+### 4.3 还有一点启发价值的
+
+- `alignment-memory replay`
+
+代表 short：
+
+- `replaygea_s3`：`84.72 / 61.50 / 49.54`
+
+判断：
+
+- `stage3-only` 有一定价值
+- 但没有继续超过主线
+- 后续如果继续做 replay，更值得保留的是“对齐信息 replay”的思想，而不是当前具体实现
+
+## 5. 当前最值得继续的 replay 方向
+
+如果后续仍然想做 replay family，我建议按下面顺序：
+
+1. 更正式的 MIR / retrieval-aware replay  
+原因：
+直接针对“哪些旧样本最容易在 `task3` 被破坏”
+
+2. replay 与偏置校正联动  
+原因：
+当前实验说明，单独换 replay 不够，必须和 `hybrid / bias / prototype` 一起设计
+
+3. replay 与跨被试对齐联动  
+原因：
+EEG 场景里真正困难的不是只有旧类保持，还有 subject shift
+
+## 6. 当前总结
+
+截至目前，对这个仓库最合理的结论是：
+
+- replay 仍然重要
+- 但“单靠换一种 exemplar 选样法”已经很难突破当前平台
+- 真正值得继续的方向是：
+  - retrieval-aware replay
+  - replay 与分类器校准联动
+  - replay 与跨被试对齐联动
+
+也就是说，后续 replay 研究更应该是“联合设计”，而不是继续孤立地微调 exemplar selection。
 
 - Zhang et al., "RehearMixup: Improving rehearsal-based continual learning", Neural Networks 2025  
   https://www.sciencedirect.com/science/article/abs/pii/S0925231225020764
