@@ -709,17 +709,21 @@ class CBiCaRL:
         X_train = process_data_chn(X_train)
 
         class_mean, feature_extractor_output, _, _ = self.compute_class_mean(X_train.unsqueeze(1))
+        effective_exemplar_mode = self.exemplar_mode if (self.stage is None or self.stage >= self.exemplar_mode_start_task) else "legacy_herding"
         exemplar = []
         now_class_mean = np.zeros((1, feature_extractor_output.shape[1]))
         selected_indices = []
         selected_mask = np.zeros(feature_extractor_output.shape[0], dtype=bool)
-        max_pick = min(int(m), int(feature_extractor_output.shape[0]))
+        unique_select = effective_exemplar_mode != "legacy_herding"
+        max_pick = min(int(m), int(feature_extractor_output.shape[0])) if unique_select else int(m)
         for i in range(max_pick):
             candidate_mean_error = class_mean - (now_class_mean + feature_extractor_output) / (i + 1)
             candidate_mean_error = np.linalg.norm(candidate_mean_error, axis=1)
-            candidate_mean_error[selected_mask] = np.inf
+            if unique_select:
+                candidate_mean_error[selected_mask] = np.inf
             index = int(np.argmin(candidate_mean_error))
-            selected_mask[index] = True
+            if unique_select:
+                selected_mask[index] = True
             selected_indices.append(index)
             now_class_mean += feature_extractor_output[index]
             exemplar.append(X_initial[index])
