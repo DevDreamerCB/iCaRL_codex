@@ -202,14 +202,6 @@ use_shared_adapter = _get_env_bool('ICARL_USE_SHARED_ADAPTER', False)
 shared_adapter_dim = _get_env_int('ICARL_SHARED_ADAPTER_DIM', 16)
 shared_adapter_dropout = _get_env_float('ICARL_SHARED_ADAPTER_DROPOUT', 0.1)
 shared_adapter_start_task = _get_env_int('ICARL_SHARED_ADAPTER_START_TASK', 0)
-use_task_prompt = _get_env_bool('ICARL_USE_TASK_PROMPT', False)
-task_prompt_len = _get_env_int('ICARL_TASK_PROMPT_LEN', 4)
-task_prompt_start_task = _get_env_int('ICARL_TASK_PROMPT_START_TASK', 0)
-use_task_lora = _get_env_bool('ICARL_USE_TASK_LORA', False)
-task_lora_rank = _get_env_int('ICARL_TASK_LORA_RANK', 4)
-task_lora_alpha = _get_env_float('ICARL_TASK_LORA_ALPHA', 1.0)
-task_lora_dropout = _get_env_float('ICARL_TASK_LORA_DROPOUT', 0.0)
-task_lora_start_task = _get_env_int('ICARL_TASK_LORA_START_TASK', 0)
 use_task_affine = _get_env_bool('ICARL_USE_TASK_AFFINE', False)
 task_affine_start_task = _get_env_int('ICARL_TASK_AFFINE_START_TASK', 0)
 use_task_bn = _get_env_bool('ICARL_USE_TASK_BN', False)
@@ -232,36 +224,15 @@ for seed in range(1, num_seeds+1):
     log = LogRecord(result_dir, '2014001', 'MIRepNet', is_align)
     log.log_init()
 
-    state_log = f'Replay memory size:{memory_size}, use_age_memory:{use_age_memory}, age_memory_power:{age_memory_power}, learning_rate:{learning_rate}, epochs:{epochs}, stage_epochs:{stage_epochs}, \
-        is_cross_session:{is_cross_session}, is_balance_sample:{balance_sample}, balance_power:{balance_power}, replay_batch_size:{replay_batch_size}, use_age_replay:{use_age_replay}, age_replay_power:{age_replay_power}, use_replay_lr_flip:{use_replay_lr_flip}, replay_lr_flip_prob:{replay_lr_flip_prob}, replay_lr_flip_start_task:{replay_lr_flip_start_task}, use_replay_mixup:{use_replay_mixup}, replay_mixup_alpha:{replay_mixup_alpha}, replay_mixup_lambda:{replay_mixup_lambda}, replay_mixup_start_task:{replay_mixup_start_task}, use_replay_logits_distill:{use_replay_logits_distill}, replay_logits_lambda:{replay_logits_lambda}, replay_logits_start_task:{replay_logits_start_task}, use_replay_hardness:{use_replay_hardness}, replay_hardness_power:{replay_hardness_power}, replay_hardness_start_task:{replay_hardness_start_task}, use_replay_repeat:{use_replay_repeat}, replay_repeat_lambda:{replay_repeat_lambda}, replay_repeat_start_task:{replay_repeat_start_task}, use_replay_global_ea:{use_replay_global_ea}, replay_global_ea_start_task:{replay_global_ea_start_task}, is_contrastive_loss:{is_contrastive_loss},\
-            lambda_contrastive_loss = {lambda_contrastive_loss}, temperature = {temperature}, weighted_crossentropy = {weighted_crossentropy}, old_class_weight_power = {old_class_weight_power}, use_feature_distill = {use_feature_distill}, feature_distill_lambda = {feature_distill_lambda}, trainable_part = {trainable_part}, \
-                stage_old_class_weight_powers = {stage_old_class_weight_powers}, \
-                stage_lwf_lambdas = {stage_lwf_lambdas}, \
-                stage_feature_distill_lambdas = {stage_feature_distill_lambdas}, \
-                use_proto_align = {use_proto_align}, proto_align_lambda = {proto_align_lambda}, use_normalized_nme = {use_normalized_nme}, \
-                    use_diag_cov_nme = {use_diag_cov_nme}, diag_cov_nme_shrink = {diag_cov_nme_shrink}, \
-                    use_radius_nme = {use_radius_nme}, radius_nme_power = {radius_nme_power}, use_age_nme = {use_age_nme}, age_nme_power = {age_nme_power}, \
-                    use_group_bias_calibration = {use_group_bias_calibration}, group_bias_alpha_min = {group_bias_alpha_min}, group_bias_alpha_max = {group_bias_alpha_max}, \
-                        group_bias_alpha_steps = {group_bias_alpha_steps}, group_bias_beta_min = {group_bias_beta_min}, group_bias_beta_max = {group_bias_beta_max}, \
-                            group_bias_beta_steps = {group_bias_beta_steps}, group_bias_old_weight = {group_bias_old_weight}, \
-                    use_weight_align = {use_weight_align}, weight_align_start_task = {weight_align_start_task}, \
-                    use_hybrid_nme_logits = {use_hybrid_nme_logits}, hybrid_start_task = {hybrid_start_task}, hybrid_alpha_min = {hybrid_alpha_min}, hybrid_alpha_max = {hybrid_alpha_max}, \
-                        hybrid_alpha_steps = {hybrid_alpha_steps}, hybrid_old_weight = {hybrid_old_weight}, \
-                    use_subject_class_align = {use_subject_class_align}, subject_class_align_lambda = {subject_class_align_lambda}, \
-                    use_current_prototype_blend = {use_current_prototype_blend}, current_prototype_blend_alpha = {current_prototype_blend_alpha}, current_prototype_blend_start_task = {current_prototype_blend_start_task}, current_prototype_blend_mode = {current_prototype_blend_mode}, current_prototype_blend_scope = {current_prototype_blend_scope}, \
-                    use_prototype_neighbor_calibration = {use_prototype_neighbor_calibration}, prototype_neighbor_calibration_beta = {prototype_neighbor_calibration_beta}, \
-                    exemplar_mode = {exemplar_mode}, exemplar_mode_start_task = {exemplar_mode_start_task}, exemplar_diversity_lambda = {exemplar_diversity_lambda}, \
-                    use_task_adapter = {use_task_adapter}, task_adapter_dim = {task_adapter_dim}, \
-                        task_adapter_dropout = {task_adapter_dropout}, task_adapter_start_task = {task_adapter_start_task}, task_adapter_lr_mult = {task_adapter_lr_mult}, \
-                            use_shared_adapter = {use_shared_adapter}, shared_adapter_dim = {shared_adapter_dim}, \
-                                shared_adapter_dropout = {shared_adapter_dropout}, shared_adapter_start_task = {shared_adapter_start_task}, \
-                                    use_task_prompt = {use_task_prompt}, task_prompt_len = {task_prompt_len}, \
-                                        task_prompt_start_task = {task_prompt_start_task}, \
-                                            use_task_lora = {use_task_lora}, task_lora_rank = {task_lora_rank}, \
-                                                task_lora_alpha = {task_lora_alpha}, task_lora_dropout = {task_lora_dropout}, \
-                                                    task_lora_start_task = {task_lora_start_task}, \
-                            use_task_affine = {use_task_affine}, task_affine_start_task = {task_affine_start_task}, \
-                                use_task_bn = {use_task_bn}, task_bn_start_task = {task_bn_start_task}'
+    state_log = (
+        f"mem={memory_size}, lr={learning_rate}, epochs={epochs}, stage_epochs={stage_epochs}, "
+        f"balance={balance_sample}/{balance_power}, replay_batch={replay_batch_size}, "
+        f"contrastive={is_contrastive_loss}, lwf={use_lwf}@{lwf_lambda}, lwf_T={lwf_T}, "
+        f"feat_distill={use_feature_distill}@{feature_distill_lambda}, oldweight={old_class_weight_power}, "
+        f"norm_nme={use_normalized_nme}, hybrid={use_hybrid_nme_logits}, ptblend={use_current_prototype_blend}, "
+        f"task_adapter={use_task_adapter}:{task_adapter_dim}, shared_adapter={use_shared_adapter}:{shared_adapter_dim}, "
+        f"task_affine={use_task_affine}, task_bn={use_task_bn}, exemplar_mode={exemplar_mode}"
+    )
     log.record(state_log)
     print(state_log)
 
@@ -281,14 +252,6 @@ for seed in range(1, num_seeds+1):
         shared_adapter_dim=shared_adapter_dim,
         shared_adapter_dropout=shared_adapter_dropout,
         shared_adapter_start_task=shared_adapter_start_task,
-        use_task_prompt=use_task_prompt,
-        task_prompt_len=task_prompt_len,
-        task_prompt_start_task=task_prompt_start_task,
-        use_task_lora=use_task_lora,
-        task_lora_rank=task_lora_rank,
-        task_lora_alpha=task_lora_alpha,
-        task_lora_dropout=task_lora_dropout,
-        task_lora_start_task=task_lora_start_task,
         use_task_affine=use_task_affine,
         affine_start_task=task_affine_start_task,
         use_task_bn=use_task_bn,

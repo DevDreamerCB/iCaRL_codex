@@ -204,14 +204,6 @@ def run_experiment(args):
     env["ICARL_SHARED_ADAPTER_DIM"] = str(args.shared_adapter_dim)
     env["ICARL_SHARED_ADAPTER_DROPOUT"] = str(args.shared_adapter_dropout)
     env["ICARL_SHARED_ADAPTER_START_TASK"] = str(args.shared_adapter_start_task)
-    env["ICARL_USE_TASK_PROMPT"] = "true" if args.use_task_prompt else "false"
-    env["ICARL_TASK_PROMPT_LEN"] = str(args.task_prompt_len)
-    env["ICARL_TASK_PROMPT_START_TASK"] = str(args.task_prompt_start_task)
-    env["ICARL_USE_TASK_LORA"] = "true" if args.use_task_lora else "false"
-    env["ICARL_TASK_LORA_RANK"] = str(args.task_lora_rank)
-    env["ICARL_TASK_LORA_ALPHA"] = str(args.task_lora_alpha)
-    env["ICARL_TASK_LORA_DROPOUT"] = str(args.task_lora_dropout)
-    env["ICARL_TASK_LORA_START_TASK"] = str(args.task_lora_start_task)
     env["ICARL_USE_TASK_AFFINE"] = "true" if args.use_task_affine else "false"
     env["ICARL_TASK_AFFINE_START_TASK"] = str(args.task_affine_start_task)
     env["ICARL_USE_TASK_BN"] = "true" if args.use_task_bn else "false"
@@ -380,18 +372,6 @@ def main():
     parser.add_argument("--shared-adapter-dim", type=int, default=16)
     parser.add_argument("--shared-adapter-dropout", type=float, default=0.1)
     parser.add_argument("--shared-adapter-start-task", type=int, default=0)
-    parser.add_argument("--use-task-prompt", action="store_true")
-    parser.add_argument("--no-use-task-prompt", dest="use_task_prompt", action="store_false")
-    parser.set_defaults(use_task_prompt=False)
-    parser.add_argument("--task-prompt-len", type=int, default=4)
-    parser.add_argument("--task-prompt-start-task", type=int, default=0)
-    parser.add_argument("--use-task-lora", action="store_true")
-    parser.add_argument("--no-use-task-lora", dest="use_task_lora", action="store_false")
-    parser.set_defaults(use_task_lora=False)
-    parser.add_argument("--task-lora-rank", type=int, default=4)
-    parser.add_argument("--task-lora-alpha", type=float, default=1.0)
-    parser.add_argument("--task-lora-dropout", type=float, default=0.0)
-    parser.add_argument("--task-lora-start-task", type=int, default=0)
     parser.add_argument("--use-task-affine", action="store_true")
     parser.add_argument("--no-use-task-affine", dest="use_task_affine", action="store_false")
     parser.set_defaults(use_task_affine=False)
