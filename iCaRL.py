@@ -90,11 +90,13 @@ class CBiCaRL:
     def __init__(self, seed, result_dir, data_path, is_cross_session, numclass, feature_extractor, \
         batch_size, memory_size, balance_sample, balance_power, replay_batch_size, is_contrastive_loss, lambda_contrastive_loss, temperature,\
         use_normalized_nme, \
-        use_hybrid_nme_logits, hybrid_start_task, hybrid_alpha_min, hybrid_alpha_max, hybrid_alpha_steps, hybrid_old_weight, \
-        use_current_prototype_blend, current_prototype_blend_alpha, current_prototype_blend_start_task, current_prototype_blend_scope, \
+        use_hybrid_nme_logits, hybrid_start_task, hybrid_alpha_min, hybrid_alpha_max, hybrid_alpha_steps, hybrid_old_weight, hybrid_focus_classes, hybrid_focus_weight, hybrid_class_bias_gamma, \
+        use_current_prototype_blend, current_prototype_blend_alpha, current_prototype_blend_start_task, current_prototype_blend_scope, current_prototype_blend_overlap_alpha, current_prototype_blend_new_alpha, \
+        use_prototype_drift_comp, prototype_drift_beta, prototype_drift_start_task, \
         exemplar_mode, exemplar_mode_start_task, \
         task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, stage_lwf_lambdas, use_feature_distill, feature_distill_lambda, stage_feature_distill_lambdas, weighted_crossentropy, old_class_weight_power, stage_old_class_weight_powers, \
+        use_subject_reweight, subject_reweight_power, subject_reweight_start_task, subject_reweight_end_task, subject_reweight_ema, \
             epochs, stage_epochs, learning_rate, is_align, log, current_date):
         super().__init__()
 
@@ -137,11 +139,20 @@ class CBiCaRL:
         self.hybrid_alpha_max = hybrid_alpha_max
         self.hybrid_alpha_steps = hybrid_alpha_steps
         self.hybrid_old_weight = hybrid_old_weight
+        self.hybrid_focus_classes = hybrid_focus_classes or []
+        self.hybrid_focus_weight = hybrid_focus_weight
         self.hybrid_alpha = 1.0
+        self.hybrid_class_bias_gamma = hybrid_class_bias_gamma
+        self.hybrid_class_bias = None
         self.use_current_prototype_blend = use_current_prototype_blend
         self.current_prototype_blend_alpha = current_prototype_blend_alpha
         self.current_prototype_blend_start_task = current_prototype_blend_start_task
         self.current_prototype_blend_scope = current_prototype_blend_scope
+        self.current_prototype_blend_overlap_alpha = current_prototype_blend_overlap_alpha
+        self.current_prototype_blend_new_alpha = current_prototype_blend_new_alpha
+        self.use_prototype_drift_comp = use_prototype_drift_comp
+        self.prototype_drift_beta = prototype_drift_beta
+        self.prototype_drift_start_task = prototype_drift_start_task
         self.exemplar_mode = exemplar_mode
         self.exemplar_mode_start_task = exemplar_mode_start_task
         self.task_adapter_lr_mult = task_adapter_lr_mult
@@ -159,6 +170,12 @@ class CBiCaRL:
         self.weighted_crossentropy = weighted_crossentropy
         self.old_class_weight_power = old_class_weight_power
         self.stage_old_class_weight_powers = stage_old_class_weight_powers
+        self.use_subject_reweight = use_subject_reweight
+        self.subject_reweight_power = subject_reweight_power
+        self.subject_reweight_start_task = subject_reweight_start_task
+        self.subject_reweight_end_task = subject_reweight_end_task
+        self.subject_reweight_ema = subject_reweight_ema
+        self.subject_loss_ema = {}
         self.class_weights = None
 
         self.counts_train_perclass = np.zeros(shape=(4,)) # 用于统计累积各类别训练样本数目
@@ -304,7 +321,7 @@ class CBiCaRL:
         )
         return weights / weights.mean()
 
-    def _compute_bce_loss(self, logits, target, old_k=None):
+    def _compute_bce_loss(self, logits, target, old_k=None, subject_ids=None):
         bce_matrix = F.binary_cross_entropy_with_logits(logits, target, reduction='none')
         if self.weighted_crossentropy and self.class_weights is not None:
             active_weights = self.class_weights[:logits.size(1)].view(1, -1)
@@ -314,7 +331,41 @@ class CBiCaRL:
             old_class_weights = self._compute_old_class_weights(old_k)
             if old_class_weights is not None:
                 bce_matrix[:, :old_k] = bce_matrix[:, :old_k] * old_class_weights.view(1, -1)
-        return bce_matrix.mean()
+
+        per_sample_loss = bce_matrix.mean(dim=1)
+        if (
+            self.use_subject_reweight
+            and subject_ids is not None
+            and self.stage is not None
+            and self.stage >= self.subject_reweight_start_task
+            and self.stage <= self.subject_reweight_end_task
+        ):
+            valid_mask = subject_ids >= 0
+            if valid_mask.any():
+                valid_subjects = subject_ids[valid_mask]
+                valid_losses = per_sample_loss[valid_mask].detach()
+                unique_subjects = torch.unique(valid_subjects)
+                ema_values = []
+                for sid in unique_subjects:
+                    subj_mask = valid_subjects == sid
+                    subj_loss = valid_losses[subj_mask].mean().item()
+                    sid_int = int(sid.item())
+                    prev = self.subject_loss_ema.get(sid_int, subj_loss)
+                    ema = self.subject_reweight_ema * prev + (1.0 - self.subject_reweight_ema) * subj_loss
+                    self.subject_loss_ema[sid_int] = ema
+                    ema_values.append(ema)
+
+                if ema_values:
+                    mean_ema = float(np.mean(ema_values))
+                    sample_weights = torch.ones_like(per_sample_loss)
+                    for sid in unique_subjects:
+                        sid_int = int(sid.item())
+                        raw = self.subject_loss_ema[sid_int] / (mean_ema + 1e-12)
+                        weight = float(np.clip(raw ** self.subject_reweight_power, 0.5, 2.0))
+                        sample_weights[subject_ids == sid] = weight
+                    return (per_sample_loss * sample_weights).mean()
+
+        return per_sample_loss.mean()
 
     def _feature_distillation_loss(self, student_features, teacher_features, labels, old_k):
         if not self.use_feature_distill or teacher_features is None or old_k <= 0:
@@ -456,7 +507,12 @@ class CBiCaRL:
                 
                 target.scatter_(1, y.reshape(-1,1), 1.0)
                 
-                loss_bce = self._compute_bce_loss(logits, target, old_k if self.prev_model is not None else None)
+                loss_bce = self._compute_bce_loss(
+                    logits,
+                    target,
+                    old_k if self.prev_model is not None else None,
+                    subject_ids=subject_ids,
+                )
 
                 if self.is_contrastive_loss:
                     loss_con = self.supervised_contrastive_loss(features, y, temperature=self.temperature)
@@ -733,14 +789,20 @@ class CBiCaRL:
         print(exampler_info)
         self.exemplar_set.append(exemplar)
 
-    def compute_class_mean(self, x):
+    def compute_class_mean(self, x, batch_size=64):
         '''
             计算类别特征中心向量
             输入:x,在MIRepNet的时候需要提前变换到45通道
             输出:类别的均值向量和特征提取器的输出 (batch_size * emb_dim)
         '''
         x = x.to(device)
-        feature_extractor_output = self.model.feature_extractor(x).detach().cpu().numpy()
+        features = []
+        with torch.no_grad():
+            for start in range(0, x.size(0), batch_size):
+                xb = x[start:start + batch_size]
+                feat = self.model.feature_extractor(xb).detach().cpu().numpy()
+                features.append(feat)
+        feature_extractor_output = np.concatenate(features, axis=0) if features else np.empty((0, 0), dtype=np.float32)
         if self.use_normalized_nme:
             feature_extractor_output = feature_extractor_output / (np.linalg.norm(feature_extractor_output, axis=1, keepdims=True) + 1e-12)
         class_mean = np.mean(feature_extractor_output, axis=0)
@@ -791,15 +853,74 @@ class CBiCaRL:
             for cls_idx in current_classes:
                 if cls_idx >= len(self.class_mean_set):
                     continue
+                cls_blend_alpha = blend_alpha
+                if cls_idx == self.numclass - 2 and self.current_prototype_blend_overlap_alpha >= 0:
+                    cls_blend_alpha = float(self.current_prototype_blend_overlap_alpha)
+                elif cls_idx == self.numclass - 1 and self.current_prototype_blend_new_alpha >= 0:
+                    cls_blend_alpha = float(self.current_prototype_blend_new_alpha)
                 train_mean, train_radius, train_var = self._compute_current_blend_target(cls_idx, device)
                 if train_mean is None:
                     continue
-                blended_mean = blend_alpha * self.class_mean_set[cls_idx] + (1.0 - blend_alpha) * train_mean
+                blended_mean = cls_blend_alpha * self.class_mean_set[cls_idx] + (1.0 - cls_blend_alpha) * train_mean
                 if self.use_normalized_nme:
                     blended_mean = blended_mean / (np.linalg.norm(blended_mean, keepdims=True) + 1e-12)
                 self.class_mean_set[cls_idx] = blended_mean
-                self.class_radius_set[cls_idx] = blend_alpha * self.class_radius_set[cls_idx] + (1.0 - blend_alpha) * train_radius
-                self.class_var_set[cls_idx] = blend_alpha * self.class_var_set[cls_idx] + (1.0 - blend_alpha) * train_var
+                self.class_radius_set[cls_idx] = cls_blend_alpha * self.class_radius_set[cls_idx] + (1.0 - cls_blend_alpha) * train_radius
+                self.class_var_set[cls_idx] = cls_blend_alpha * self.class_var_set[cls_idx] + (1.0 - cls_blend_alpha) * train_var
+
+        self._apply_prototype_drift_compensation()
+
+    def _extract_features_with_model(self, model, x, batch_size=64):
+        feats = []
+        with torch.no_grad():
+            for start in range(0, x.size(0), batch_size):
+                xb = x[start:start + batch_size]
+                feat = model.feature_extractor(xb).detach().cpu().numpy()
+                feats.append(feat)
+        feats = np.concatenate(feats, axis=0) if feats else np.empty((0, 0), dtype=np.float32)
+        if self.use_normalized_nme:
+            feats = feats / (np.linalg.norm(feats, axis=1, keepdims=True) + 1e-12)
+        return feats
+
+    def _apply_prototype_drift_compensation(self):
+        if (
+            not self.use_prototype_drift_comp
+            or self.prev_model is None
+            or self.stage is None
+            or self.stage < self.prototype_drift_start_task
+        ):
+            return
+
+        old_k = min(len(self.exemplar_set), len(self.class_mean_set), self.numclass - 1)
+        if old_k <= 0:
+            return
+
+        beta = float(self.prototype_drift_beta)
+        if beta <= 0:
+            return
+
+        drift_info = []
+        for cls_idx in range(old_k):
+            exemplar = np.array(self.exemplar_set[cls_idx])
+            if exemplar.size == 0:
+                continue
+            exemplar = process_data_chn(exemplar).unsqueeze(1).to(device)
+            current_feat = self._extract_features_with_model(self.model, exemplar)
+            prev_feat = self._extract_features_with_model(self.prev_model, exemplar)
+            drift = current_feat.mean(axis=0) - prev_feat.mean(axis=0)
+            compensated_mean = self.class_mean_set[cls_idx] - beta * drift
+            if self.use_normalized_nme:
+                compensated_mean = compensated_mean / (np.linalg.norm(compensated_mean, keepdims=True) + 1e-12)
+            self.class_mean_set[cls_idx] = compensated_mean
+            drift_info.append(f"class {cls_idx}: drift_norm={float(np.linalg.norm(drift)):.4f}")
+
+        if drift_info:
+            msg = (
+                f"prototype drift compensation stage {self.stage}: beta={beta:.3f}; "
+                + ", ".join(drift_info)
+            )
+            self.log.record(msg)
+            print(msg)
 
     def _compute_current_blend_target(self, cls_idx, device):
         X_train_cls, _ = self.dataset.get_train_data(self.train_idt, np.array([cls_idx]))
@@ -891,6 +1012,8 @@ class CBiCaRL:
         nme_scores = self._normalize_score_rows(nme_scores)
         fc_scores = self._normalize_score_rows(fc_scores)
         scores = self.hybrid_alpha * nme_scores + (1.0 - self.hybrid_alpha) * fc_scores
+        if self.hybrid_class_bias is not None and len(self.hybrid_class_bias) == scores.shape[1]:
+            scores = scores + self.hybrid_class_bias.reshape(1, -1)
         return scores, feature
 
     def _macro_accuracy(self, y_true, y_pred, class_ids):
@@ -906,6 +1029,7 @@ class CBiCaRL:
 
     def _fit_hybrid_fusion_calibration(self):
         self.hybrid_alpha = 1.0
+        self.hybrid_class_bias = None
 
         if (
             not self.use_hybrid_nme_logits
@@ -940,6 +1064,10 @@ class CBiCaRL:
         base_old = self._macro_accuracy(y_cal, base_pred, np.arange(old_k))
         base_all = self._macro_accuracy(y_cal, base_pred, np.unique(y_cal))
         best_obj = self.hybrid_old_weight * base_old + (1.0 - self.hybrid_old_weight) * base_all
+        focus_class_ids = np.array([cls for cls in self.hybrid_focus_classes if cls in class_ids], dtype=np.int64)
+        if focus_class_ids.size > 0 and self.hybrid_focus_weight > 0:
+            base_focus = self._macro_accuracy(y_cal, base_pred, focus_class_ids)
+            best_obj = (1.0 - self.hybrid_focus_weight) * best_obj + self.hybrid_focus_weight * base_focus
         best_alpha = 1.0
 
         alpha_values = np.linspace(self.hybrid_alpha_min, self.hybrid_alpha_max, int(self.hybrid_alpha_steps))
@@ -949,14 +1077,39 @@ class CBiCaRL:
             old_macro = self._macro_accuracy(y_cal, pred, np.arange(old_k))
             all_macro = self._macro_accuracy(y_cal, pred, class_ids)
             obj = self.hybrid_old_weight * old_macro + (1.0 - self.hybrid_old_weight) * all_macro
+            if focus_class_ids.size > 0 and self.hybrid_focus_weight > 0:
+                focus_macro = self._macro_accuracy(y_cal, pred, focus_class_ids)
+                obj = (1.0 - self.hybrid_focus_weight) * obj + self.hybrid_focus_weight * focus_macro
             if obj > best_obj + 1e-8:
                 best_obj = obj
                 best_alpha = float(alpha)
 
         self.hybrid_alpha = best_alpha
+        if self.hybrid_class_bias_gamma > 0:
+            fused = best_alpha * nme_scores + (1.0 - best_alpha) * fc_scores
+            pred = fused.argmax(axis=1)
+            bias = np.zeros(fused.shape[1], dtype=np.float64)
+            recalls = []
+            class_ids_sorted = np.arange(fused.shape[1], dtype=np.int64)
+            for cls in class_ids_sorted:
+                mask = y_cal == cls
+                if mask.sum() <= 0:
+                    recalls.append(np.nan)
+                    continue
+                recalls.append(float((pred[mask] == y_cal[mask]).mean()))
+            valid_recalls = np.array([r for r in recalls if not np.isnan(r)], dtype=np.float64)
+            if valid_recalls.size > 0:
+                target_recall = float(valid_recalls.mean())
+                for cls, recall in enumerate(recalls):
+                    if np.isnan(recall):
+                        continue
+                    bias[cls] = self.hybrid_class_bias_gamma * (target_recall - recall)
+                self.hybrid_class_bias = bias
         hybrid_info = (
             f"hybrid nme-logits calibration stage {self.stage}: old_k={old_k}, "
-            f"alpha={self.hybrid_alpha:.4f}, objective={best_obj:.4f}"
+            f"alpha={self.hybrid_alpha:.4f}, objective={best_obj:.4f}, "
+            f"focus={self.hybrid_focus_classes}, focus_w={self.hybrid_focus_weight:.3f}, "
+            f"class_bias_gamma={self.hybrid_class_bias_gamma:.3f}"
         )
         self.log.record(hybrid_info)
         print(hybrid_info)

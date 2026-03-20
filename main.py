@@ -67,6 +67,17 @@ def _configure_trainable_params(feature_extractor, mode):
         for name, param in feature_extractor.named_parameters():
             if name.startswith("embedding.") or name.startswith("transformer."):
                 param.requires_grad = True
+    elif mode == "peft_only":
+        peft_tags = (
+            "shared_adapter.",
+            "task_adapter.",
+            "embedding.task_bn.",
+            "embedding.task_scale",
+            "embedding.task_bias",
+        )
+        for name, param in feature_extractor.named_parameters():
+            if any(tag in name for tag in peft_tags):
+                param.requires_grad = True
     else:
         raise ValueError(f"Unsupported ICARL_TRAINABLE_PART: {mode}")
 
@@ -141,10 +152,18 @@ hybrid_alpha_min = _get_env_float('ICARL_HYBRID_ALPHA_MIN', 0.0)
 hybrid_alpha_max = _get_env_float('ICARL_HYBRID_ALPHA_MAX', 1.0)
 hybrid_alpha_steps = _get_env_int('ICARL_HYBRID_ALPHA_STEPS', 11)
 hybrid_old_weight = _get_env_float('ICARL_HYBRID_OLD_WEIGHT', 0.6)
+hybrid_focus_classes = _get_env_int_list('ICARL_HYBRID_FOCUS_CLASSES', None)
+hybrid_focus_weight = _get_env_float('ICARL_HYBRID_FOCUS_WEIGHT', 0.0)
+hybrid_class_bias_gamma = _get_env_float('ICARL_HYBRID_CLASS_BIAS_GAMMA', 0.0)
 use_current_prototype_blend = _get_env_bool('ICARL_USE_CURRENT_PROTOTYPE_BLEND', False)
 current_prototype_blend_alpha = _get_env_float('ICARL_CURRENT_PROTOTYPE_BLEND_ALPHA', 0.5)
 current_prototype_blend_start_task = _get_env_int('ICARL_CURRENT_PROTOTYPE_BLEND_START_TASK', 1)
 current_prototype_blend_scope = _get_env_str('ICARL_CURRENT_PROTOTYPE_BLEND_SCOPE', 'current')
+current_prototype_blend_overlap_alpha = _get_env_float('ICARL_CURRENT_PROTOTYPE_BLEND_OVERLAP_ALPHA', -1.0)
+current_prototype_blend_new_alpha = _get_env_float('ICARL_CURRENT_PROTOTYPE_BLEND_NEW_ALPHA', -1.0)
+use_prototype_drift_comp = _get_env_bool('ICARL_USE_PROTOTYPE_DRIFT_COMP', False)
+prototype_drift_beta = _get_env_float('ICARL_PROTOTYPE_DRIFT_BETA', 0.5)
+prototype_drift_start_task = _get_env_int('ICARL_PROTOTYPE_DRIFT_START_TASK', 2)
 exemplar_mode = _get_env_str('ICARL_EXEMPLAR_MODE', 'legacy_herding')
 exemplar_mode_start_task = _get_env_int('ICARL_EXEMPLAR_MODE_START_TASK', 1)
 use_task_adapter = _get_env_bool('ICARL_USE_TASK_ADAPTER', False)
@@ -160,6 +179,11 @@ use_task_affine = _get_env_bool('ICARL_USE_TASK_AFFINE', False)
 task_affine_start_task = _get_env_int('ICARL_TASK_AFFINE_START_TASK', 0)
 use_task_bn = _get_env_bool('ICARL_USE_TASK_BN', False)
 task_bn_start_task = _get_env_int('ICARL_TASK_BN_START_TASK', 0)
+use_subject_reweight = _get_env_bool('ICARL_USE_SUBJECT_REWEIGHT', False)
+subject_reweight_power = _get_env_float('ICARL_SUBJECT_REWEIGHT_POWER', 1.0)
+subject_reweight_start_task = _get_env_int('ICARL_SUBJECT_REWEIGHT_START_TASK', 2)
+subject_reweight_end_task = _get_env_int('ICARL_SUBJECT_REWEIGHT_END_TASK', 99)
+subject_reweight_ema = _get_env_float('ICARL_SUBJECT_REWEIGHT_EMA', 0.9)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -217,11 +241,14 @@ for seed in range(1, num_seeds+1):
         feature_extractor,batch_size,\
         memory_size, balance_sample, balance_power, replay_batch_size, is_contrastive_loss, lambda_contrastive_loss, temperature, \
         use_normalized_nme, \
-        use_hybrid_nme_logits, hybrid_start_task, hybrid_alpha_min, hybrid_alpha_max, hybrid_alpha_steps, hybrid_old_weight, \
+        use_hybrid_nme_logits, hybrid_start_task, hybrid_alpha_min, hybrid_alpha_max, hybrid_alpha_steps, hybrid_old_weight, hybrid_focus_classes, hybrid_focus_weight, hybrid_class_bias_gamma, \
         use_current_prototype_blend, current_prototype_blend_alpha, current_prototype_blend_start_task, current_prototype_blend_scope, \
+        current_prototype_blend_overlap_alpha, current_prototype_blend_new_alpha, \
+        use_prototype_drift_comp, prototype_drift_beta, prototype_drift_start_task, \
         exemplar_mode, exemplar_mode_start_task, \
         task_adapter_lr_mult, \
         use_lwf, lwf_lambda, lwf_T, stage_lwf_lambdas, use_feature_distill, feature_distill_lambda, stage_feature_distill_lambdas, weighted_crossentropy, old_class_weight_power, stage_old_class_weight_powers,\
+        use_subject_reweight, subject_reweight_power, subject_reweight_start_task, subject_reweight_end_task, subject_reweight_ema, \
         epochs, stage_epochs, learning_rate,is_align,log,current_date)
 
     current_seed_stage_results = []

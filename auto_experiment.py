@@ -143,10 +143,19 @@ def run_experiment(args):
     env["ICARL_HYBRID_ALPHA_MAX"] = str(args.hybrid_alpha_max)
     env["ICARL_HYBRID_ALPHA_STEPS"] = str(args.hybrid_alpha_steps)
     env["ICARL_HYBRID_OLD_WEIGHT"] = str(args.hybrid_old_weight)
+    if args.hybrid_focus_classes:
+        env["ICARL_HYBRID_FOCUS_CLASSES"] = args.hybrid_focus_classes
+    env["ICARL_HYBRID_FOCUS_WEIGHT"] = str(args.hybrid_focus_weight)
+    env["ICARL_HYBRID_CLASS_BIAS_GAMMA"] = str(args.hybrid_class_bias_gamma)
     env["ICARL_USE_CURRENT_PROTOTYPE_BLEND"] = "true" if args.use_current_prototype_blend else "false"
     env["ICARL_CURRENT_PROTOTYPE_BLEND_ALPHA"] = str(args.current_prototype_blend_alpha)
     env["ICARL_CURRENT_PROTOTYPE_BLEND_START_TASK"] = str(args.current_prototype_blend_start_task)
     env["ICARL_CURRENT_PROTOTYPE_BLEND_SCOPE"] = args.current_prototype_blend_scope
+    env["ICARL_CURRENT_PROTOTYPE_BLEND_OVERLAP_ALPHA"] = str(args.current_prototype_blend_overlap_alpha)
+    env["ICARL_CURRENT_PROTOTYPE_BLEND_NEW_ALPHA"] = str(args.current_prototype_blend_new_alpha)
+    env["ICARL_USE_PROTOTYPE_DRIFT_COMP"] = "true" if args.use_prototype_drift_comp else "false"
+    env["ICARL_PROTOTYPE_DRIFT_BETA"] = str(args.prototype_drift_beta)
+    env["ICARL_PROTOTYPE_DRIFT_START_TASK"] = str(args.prototype_drift_start_task)
     env["ICARL_EXEMPLAR_MODE"] = args.exemplar_mode
     env["ICARL_EXEMPLAR_MODE_START_TASK"] = str(args.exemplar_mode_start_task)
     env["ICARL_USE_TASK_ADAPTER"] = "true" if args.use_task_adapter else "false"
@@ -162,6 +171,11 @@ def run_experiment(args):
     env["ICARL_TASK_AFFINE_START_TASK"] = str(args.task_affine_start_task)
     env["ICARL_USE_TASK_BN"] = "true" if args.use_task_bn else "false"
     env["ICARL_TASK_BN_START_TASK"] = str(args.task_bn_start_task)
+    env["ICARL_USE_SUBJECT_REWEIGHT"] = "true" if args.use_subject_reweight else "false"
+    env["ICARL_SUBJECT_REWEIGHT_POWER"] = str(args.subject_reweight_power)
+    env["ICARL_SUBJECT_REWEIGHT_START_TASK"] = str(args.subject_reweight_start_task)
+    env["ICARL_SUBJECT_REWEIGHT_END_TASK"] = str(args.subject_reweight_end_task)
+    env["ICARL_SUBJECT_REWEIGHT_EMA"] = str(args.subject_reweight_ema)
 
     if args.lr is not None:
         env["ICARL_LR"] = str(args.lr)
@@ -261,12 +275,22 @@ def main():
     parser.add_argument("--hybrid-alpha-max", type=float, default=1.0)
     parser.add_argument("--hybrid-alpha-steps", type=int, default=11)
     parser.add_argument("--hybrid-old-weight", type=float, default=0.6)
+    parser.add_argument("--hybrid-focus-classes", default="")
+    parser.add_argument("--hybrid-focus-weight", type=float, default=0.0)
+    parser.add_argument("--hybrid-class-bias-gamma", type=float, default=0.0)
     parser.add_argument("--use-current-prototype-blend", dest="use_current_prototype_blend", action="store_true")
     parser.add_argument("--no-use-current-prototype-blend", dest="use_current_prototype_blend", action="store_false")
     parser.set_defaults(use_current_prototype_blend=False)
     parser.add_argument("--current-prototype-blend-alpha", type=float, default=0.5)
     parser.add_argument("--current-prototype-blend-start-task", type=int, default=1)
     parser.add_argument("--current-prototype-blend-scope", default="current")
+    parser.add_argument("--current-prototype-blend-overlap-alpha", type=float, default=-1.0)
+    parser.add_argument("--current-prototype-blend-new-alpha", type=float, default=-1.0)
+    parser.add_argument("--use-prototype-drift-comp", action="store_true")
+    parser.add_argument("--no-use-prototype-drift-comp", dest="use_prototype_drift_comp", action="store_false")
+    parser.set_defaults(use_prototype_drift_comp=False)
+    parser.add_argument("--prototype-drift-beta", type=float, default=0.5)
+    parser.add_argument("--prototype-drift-start-task", type=int, default=2)
     parser.add_argument("--exemplar-mode", default="legacy_herding")
     parser.add_argument("--exemplar-mode-start-task", type=int, default=1)
     parser.add_argument("--use-task-adapter", action="store_true")
@@ -290,6 +314,13 @@ def main():
     parser.add_argument("--no-use-task-bn", dest="use_task_bn", action="store_false")
     parser.set_defaults(use_task_bn=False)
     parser.add_argument("--task-bn-start-task", type=int, default=0)
+    parser.add_argument("--use-subject-reweight", action="store_true")
+    parser.add_argument("--no-use-subject-reweight", dest="use_subject_reweight", action="store_false")
+    parser.set_defaults(use_subject_reweight=False)
+    parser.add_argument("--subject-reweight-power", type=float, default=1.0)
+    parser.add_argument("--subject-reweight-start-task", type=int, default=2)
+    parser.add_argument("--subject-reweight-end-task", type=int, default=99)
+    parser.add_argument("--subject-reweight-ema", type=float, default=0.9)
     parser.add_argument("--use-contrastive", action="store_true")
     parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
     parser.set_defaults(use_contrastive=True)
