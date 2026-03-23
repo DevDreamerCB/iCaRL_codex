@@ -25,7 +25,7 @@ def add_slide(prs, title, bullets, subtitle=None):
             para.font.size = Pt(22)
         return
 
-    box = slide.shapes.add_textbox(Inches(0.8), Inches(1.35), Inches(11.6), Inches(5.5))
+    box = slide.shapes.add_textbox(Inches(0.8), Inches(1.35), Inches(11.6), Inches(5.6))
     tf = box.text_frame
     tf.word_wrap = True
     first = True
@@ -43,122 +43,128 @@ prs.slide_height = Inches(7.5)
 
 slides = [
     (
-        "通用连续学习方法链复验",
+        "通用方法链复验",
         [
-            "目标：只保留适用于所有 task 的通用 continual 方法",
-            "统一标准：stage_epochs = 10,12,12；screen = 1 seed",
-            "从最原始 iCaRL（去掉 contrastive）开始逐步加方法",
-            "不使用 stage-specific prototype 修补或 asymmetric BCE",
+            "纠正上一版错误底座：这次从 mem36 + replaymix2 出发",
+            "统一目标：只看全 task 通用组件，不用 stage-specific trick",
+            "方法链仍按固定预算逐步叠加，但起点更合理",
         ],
-        "固定预算口径下的通用 pipeline",
+        "更合理底座：no contrastive + memory=36 + replaymix2",
     ),
     (
-        "为什么要单独做这条链",
+        "为什么要重跑",
         [
-            "之前更强的主线包含 stage2/stage3 条件性设计，虽然有效，但不够通用。",
-            "这次的目标不是追最高分，而是确认哪些组件能被写成“对所有 task 都适用”的方法。",
-            "因此本轮更关注方法的普适性和可解释性，而不是最终最优分数。",
+            "上一版通用链错误地从 mem24 + 无 replaymix 出发。",
+            "这会把很多本来依赖更合理 replay 底座的方法误判为无效。",
+            "因此必须从更接近真实强基线的底座重新做一遍链式验证。",
         ],
         None,
     ),
     (
         "方法链步骤",
         [
-            "gen00：原始 iCaRL（去掉 contrastive）",
-            "gen01：+ task adapter dim=16，从 stage1 开始",
-            "gen02：+ stage_epochs = 10,12,12",
-            "gen03：+ oldweight = 3.125",
-            "gen04：+ normalized NME",
-            "gen05：+ LwF",
-            "gen06：+ task affine，从 stage1 开始",
-            "gen07：+ hybrid NME + logits",
+            "ugen00：更合理底座（no contrastive + mem36 + replaymix2）",
+            "ugen01：+ task adapter dim=16，从 stage1 开始",
+            "ugen02：+ stage_epochs = 10,12,12",
+            "ugen03：+ oldweight = 3.125",
+            "ugen04：+ normalized NME",
+            "ugen05：+ LwF(0.175, T=1.5)",
+            "ugen06：+ task affine，从 stage1 开始",
+            "ugen07：+ hybrid NME+logits，统一早期开启",
         ],
         None,
     ),
     (
         "结果总览",
         [
-            "gen00: 84.72 / 56.48 / 43.29",
-            "gen01: 85.42 / 57.64 / 39.89",
-            "gen02: 85.42 / 57.79 / 39.20",
-            "gen03: 85.42 / 53.70 / 39.93",
-            "gen04: 85.42 / 54.86 / 45.22",
-            "gen05: 85.42 / 54.63 / 46.76",
-            "gen06: 84.49 / 55.86 / 43.09",
-            "gen07: 84.49 / 56.40 / 43.33",
+            "ugen00: 84.95 / 57.56 / 42.71",
+            "ugen01: 85.42 / 57.48 / 42.59",
+            "ugen02: 85.42 / 60.19 / 41.47",
+            "ugen03: 85.42 / 52.39 / 39.81",
+            "ugen04: 85.42 / 56.64 / 44.95",
+            "ugen05: 85.42 / 55.86 / 46.22",
+            "ugen06: 84.26 / 55.94 / 45.06",
+            "ugen07: 84.26 / 55.17 / 45.99",
         ],
         None,
     ),
     (
-        "前半段结论",
+        "底座本身说明什么",
         [
-            "adapter16 from stage1 不是通用增益项，task3 明显变差。",
-            "单独把训练预算改成 10,12,12 不能修复这个问题。",
-            "全局 oldweight=3.125 也不适合作为通用组件，task2/task3 一起受损。",
+            "仅仅把底座改成 mem36 + replaymix2，就比上一版错误链更接近真实场景。",
+            "ugen00 已经到 84.95 / 57.56 / 42.71。",
+            "这证明之前的大差距主要来自起点过弱，而不是方法链本身全都失效。",
         ],
         None,
     ),
     (
-        "为什么 normNME 成立",
+        "adapter 全开并不成立",
         [
-            "gen04 把 task3 从 39.93 拉回到 45.22。",
-            "它不是阶段性 trick，而是统一修 prototype classifier 的几何。",
-            "因此它最适合被保留为“通用 continual classifier improvement”。",
+            "ugen01 只有 task1 略升，task2/task3 没有真实改善。",
+            "说明 adapter16 从 stage1 全开，不是一个自然成立的全 task 通用组件。",
+            "它更像条件性有效的方法，需要更具体的上下文。",
         ],
         None,
     ),
     (
-        "为什么 LwF 仍然值得保留",
+        "10,12,12 的作用",
         [
-            "gen05 把 task3 进一步从 45.22 拉到 46.76。",
-            "虽然 task2 没继续涨，但总体 score 仍然提高。",
-            "说明 LwF 在这条严格通用链里依旧是有效的旧知识保持机制。",
+            "ugen02 把 task2 从 57.48 拉到 60.19。",
+            "说明更合理的阶段训练预算仍然是有效的通用设置。",
+            "但它本身不是万能修正，task3 仍然偏低。",
         ],
         None,
     ),
     (
-        "为什么 affine 和 hybrid 没成立",
+        "为什么 oldweight 不适合写成通用组件",
         [
-            "gen06 affineall: 84.49 / 55.86 / 43.09",
-            "gen07 hybridall: 84.49 / 56.40 / 43.33",
-            "这说明它们不能机械地从 stage1/早期统一启用。",
-            "更准确的定位应当是：条件性有效，而不是通用主线组件。",
+            "ugen03 变成 85.42 / 52.39 / 39.81。",
+            "这说明 oldweight=3.125 不能机械地全局加入通用链。",
+            "它只有在更具体、更条件性的主线里才成立。",
         ],
         None,
     ),
     (
-        "通用链最终保留什么",
+        "normNME 与 LwF 的地位",
         [
-            "去掉 contrastive",
-            "normalized NME",
-            "LwF",
-            "这三项是本轮最稳、最适合写成通用 continual 方法的核心。",
+            "ugen04: normNME -> 85.42 / 56.64 / 44.95",
+            "ugen05: +LwF -> 85.42 / 55.86 / 46.22",
+            "说明这两项在更合理底座上仍然是最像“通用 continual 组件”的方法。",
         ],
         None,
     ),
     (
-        "和当前更强主线的关系",
+        "为什么 affine 和 hybrid 也没成立",
         [
-            "更强 fixed-budget 主线：s2ace00_ptblendnew02_stage101212_confirm",
-            "结果：84.18 / 60.70 / 49.40",
-            "它更强，但包含明显更具阶段性的设计。",
-            "因此论文里可以分层叙述：先讲通用方法链，再讲场景增强版主线。",
+            "ugen06 affineall: 84.26 / 55.94 / 45.06",
+            "ugen07 hybridall: 84.26 / 55.17 / 45.99",
+            "把它们从 stage1/早期统一启用，并不会自然形成增益。",
+            "所以它们更适合被归类为条件性组件，而不是通用主线组件。",
         ],
         None,
     ),
     (
-        "推荐写法",
+        "当前通用链结论",
         [
-            "基础 pipeline：no contrastive -> normNME -> LwF",
-            "说明 adapter/affine/hybrid 在“全任务统一启用”的严格标准下没有成立。",
-            "增强版方法再单独介绍：为什么需要 stage2-focused 机制。",
-            "这样方法故事会更清晰，也更符合你的论文目标。",
+            "更合理底座：mem36 + replaymix2",
+            "成立的通用点：10,12,12、normalized NME、LwF",
+            "不成立的通用点：adapter 全开、全局 oldweight、affine 全开、hybrid 早期开启",
+        ],
+        None,
+    ),
+    (
+        "和更强主线的关系",
+        [
+            "更强 fixed-budget 主线仍然是 s2ace00_ptblendnew02_stage101212_confirm。",
+            "通用链回答的是“哪些组件能写成普适方法”。",
+            "增强主线回答的是“针对当前场景瓶颈，哪些阶段性方法最有效”。",
+            "这两套材料在论文里应该分层叙述，而不是混在一起。",
         ],
         None,
     ),
 ]
 
-for i, (title, bullets, subtitle) in enumerate(slides):
+for title, bullets, subtitle in slides:
     add_slide(prs, title, bullets, subtitle)
 
 prs.save(OUT)

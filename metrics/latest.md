@@ -1,18 +1,18 @@
 # Latest Metrics
 
-- run tag: `20260323_160951_20260323_160948_gen07_hybridall_short`
+- run tag: `20260323_171703_20260323_171659_ugen07_hybridall_mem36_rp2_short`
 - epochs: ``
 - seeds: `1`
 - gpu: `5`
-- note: `gen07_hybridall_short`
+- note: `ugen07_hybridall_mem36_rp2_short`
 - stage epochs: ``
 - trainable part: ``
 - proto align: `` @ ``
-- task1 / stage1 total: `84.49`
-- task2 / stage2 total: `56.4`
-- task3 / stage3 total: `43.33`
-- score: `55.48`
-- log: `20260323_160951_20260323_160948_gen07_hybridall_short/log_MIRepNet_EA_2026-03-23_08_09_51.txt`
+- task1 / stage1 total: `84.26`
+- task2 / stage2 total: `55.17`
+- task3 / stage3 total: `45.99`
+- score: `56.4`
+- log: `20260323_171703_20260323_171659_ugen07_hybridall_mem36_rp2_short/log_MIRepNet_EA_2026-03-23_09_17_03.txt`
 
 ## Best Full Confirm So Far
 - run tag: `20260323_095352_20260323_095348_s2ace00_ptblendnew02_s3_confirm`
