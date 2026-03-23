@@ -115,6 +115,7 @@ batch_size = _get_env_int('ICARL_BATCH_SIZE', 32)
 balance_sample = _get_env_bool('ICARL_BALANCE_SAMPLE', True)
 balance_power = _get_env_float('ICARL_BALANCE_POWER', 0.5)
 replay_batch_size = _get_env_int('ICARL_REPLAY_BATCH_SIZE', 0)
+stage_replay_batch_sizes = _get_env_int_list('ICARL_STAGE_REPLAY_BATCH_SIZES', None)
 num_stages = _get_env_int('ICARL_NUM_STAGES', 3)
 num_seeds = _get_env_int('ICARL_NUM_SEEDS', 3)
 epochs = _get_env_int('ICARL_EPOCHS', 30)
@@ -138,12 +139,22 @@ stage_lwf_lambdas = _get_env_float_list('ICARL_STAGE_LWF_LAMBDAS', None)
 use_feature_distill = _get_env_bool('ICARL_USE_FEATURE_DISTILL', False)
 feature_distill_lambda = _get_env_float('ICARL_FEATURE_DISTILL_LAMBDA', 0.1)
 stage_feature_distill_lambdas = _get_env_float_list('ICARL_STAGE_FEATURE_DISTILL_LAMBDAS', None)
+exclusive_old_feature_distill_boost = _get_env_float('ICARL_EXCLUSIVE_OLD_FEATURE_DISTILL_BOOST', 1.0)
+stage_exclusive_old_feature_distill_boosts = _get_env_float_list('ICARL_STAGE_EXCLUSIVE_OLD_FEATURE_DISTILL_BOOSTS', None)
+overlap_align_lambda = _get_env_float('ICARL_OVERLAP_ALIGN_LAMBDA', 0.0)
+stage_overlap_align_lambdas = _get_env_float_list('ICARL_STAGE_OVERLAP_ALIGN_LAMBDAS', None)
 
 is_align = _get_env_bool('ICARL_USE_ALIGN', True)
 
 weighted_crossentropy = _get_env_bool('ICARL_WEIGHTED_CE', False)
 old_class_weight_power = _get_env_float('ICARL_OLD_CLASS_WEIGHT_POWER', 0.0)
 stage_old_class_weight_powers = _get_env_float_list('ICARL_STAGE_OLD_CLASS_WEIGHT_POWERS', None)
+exclusive_old_boost = _get_env_float('ICARL_EXCLUSIVE_OLD_BOOST', 1.0)
+stage_exclusive_old_boosts = _get_env_float_list('ICARL_STAGE_EXCLUSIVE_OLD_BOOSTS', None)
+absent_old_current_weight = _get_env_float('ICARL_ABSENT_OLD_CURRENT_WEIGHT', 1.0)
+stage_absent_old_current_weights = _get_env_float_list('ICARL_STAGE_ABSENT_OLD_CURRENT_WEIGHTS', None)
+exclusive_old_replay_boost = _get_env_float('ICARL_EXCLUSIVE_OLD_REPLAY_BOOST', 1.0)
+stage_exclusive_old_replay_boosts = _get_env_float_list('ICARL_STAGE_EXCLUSIVE_OLD_REPLAY_BOOSTS', None)
 trainable_part = _get_env_str('ICARL_TRAINABLE_PART', 'all')
 use_normalized_nme = _get_env_bool('ICARL_USE_NORMALIZED_NME', False)
 use_hybrid_nme_logits = _get_env_bool('ICARL_USE_HYBRID_NME_LOGITS', False)
@@ -164,6 +175,8 @@ current_prototype_blend_new_alpha = _get_env_float('ICARL_CURRENT_PROTOTYPE_BLEN
 use_prototype_drift_comp = _get_env_bool('ICARL_USE_PROTOTYPE_DRIFT_COMP', False)
 prototype_drift_beta = _get_env_float('ICARL_PROTOTYPE_DRIFT_BETA', 0.5)
 prototype_drift_start_task = _get_env_int('ICARL_PROTOTYPE_DRIFT_START_TASK', 2)
+overlap_transport_beta = _get_env_float('ICARL_OVERLAP_TRANSPORT_BETA', 0.0)
+stage_overlap_transport_betas = _get_env_float_list('ICARL_STAGE_OVERLAP_TRANSPORT_BETAS', None)
 exemplar_mode = _get_env_str('ICARL_EXEMPLAR_MODE', 'legacy_herding')
 exemplar_mode_start_task = _get_env_int('ICARL_EXEMPLAR_MODE_START_TASK', 1)
 use_task_adapter = _get_env_bool('ICARL_USE_TASK_ADAPTER', False)
@@ -179,11 +192,18 @@ use_task_affine = _get_env_bool('ICARL_USE_TASK_AFFINE', False)
 task_affine_start_task = _get_env_int('ICARL_TASK_AFFINE_START_TASK', 0)
 use_task_bn = _get_env_bool('ICARL_USE_TASK_BN', False)
 task_bn_start_task = _get_env_int('ICARL_TASK_BN_START_TASK', 0)
+use_stage2_lr_mirror_aug = _get_env_bool('ICARL_USE_STAGE2_LR_MIRROR_AUG', False)
+stage2_lr_mirror_aug_ratio = _get_env_float('ICARL_STAGE2_LR_MIRROR_AUG_RATIO', 0.5)
 use_subject_reweight = _get_env_bool('ICARL_USE_SUBJECT_REWEIGHT', False)
 subject_reweight_power = _get_env_float('ICARL_SUBJECT_REWEIGHT_POWER', 1.0)
 subject_reweight_start_task = _get_env_int('ICARL_SUBJECT_REWEIGHT_START_TASK', 2)
 subject_reweight_end_task = _get_env_int('ICARL_SUBJECT_REWEIGHT_END_TASK', 99)
 subject_reweight_ema = _get_env_float('ICARL_SUBJECT_REWEIGHT_EMA', 0.9)
+stage_balanced_ft_epochs = _get_env_int_list('ICARL_STAGE_BALANCED_FT_EPOCHS', None)
+balanced_ft_lr_scale = _get_env_float('ICARL_BALANCED_FT_LR_SCALE', 0.1)
+balanced_ft_classifier_only = _get_env_bool('ICARL_BALANCED_FT_CLASSIFIER_ONLY', False)
+current_class_ce_weight = _get_env_float('ICARL_CURRENT_CLASS_CE_WEIGHT', 0.0)
+stage_current_class_ce_weights = _get_env_float_list('ICARL_STAGE_CURRENT_CLASS_CE_WEIGHTS', None)
 
 run_tag = os.getenv('ICARL_RUN_TAG', '').strip()
 current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -204,12 +224,15 @@ for seed in range(1, num_seeds+1):
 
     state_log = (
         f"mem={memory_size}, lr={learning_rate}, epochs={epochs}, stage_epochs={stage_epochs}, "
-        f"balance={balance_sample}/{balance_power}, replay_batch={replay_batch_size}, "
+        f"balance={balance_sample}/{balance_power}, replay_batch={replay_batch_size}, stage_replay={stage_replay_batch_sizes}, "
         f"contrastive={is_contrastive_loss}, lwf={use_lwf}@{lwf_lambda}, lwf_T={lwf_T}, "
-        f"feat_distill={use_feature_distill}@{feature_distill_lambda}, oldweight={old_class_weight_power}, "
+        f"feat_distill={use_feature_distill}@{feature_distill_lambda}, oldweight={old_class_weight_power}, exold={exclusive_old_boost}, exreplay={exclusive_old_replay_boost}, "
         f"norm_nme={use_normalized_nme}, hybrid={use_hybrid_nme_logits}, ptblend={use_current_prototype_blend}, "
         f"task_adapter={use_task_adapter}:{task_adapter_dim}, shared_adapter={use_shared_adapter}:{shared_adapter_dim}, "
-        f"task_affine={use_task_affine}, task_bn={use_task_bn}, exemplar_mode={exemplar_mode}"
+        f"task_affine={use_task_affine}, task_bn={use_task_bn}, "
+        f"s2_mirror_aug={use_stage2_lr_mirror_aug}:{stage2_lr_mirror_aug_ratio}, "
+        f"balanced_ft={stage_balanced_ft_epochs}@{balanced_ft_lr_scale}, bft_head={balanced_ft_classifier_only}, "
+        f"currce={current_class_ce_weight}/{stage_current_class_ce_weights}, exemplar_mode={exemplar_mode}"
     )
     log.record(state_log)
     print(state_log)
@@ -244,12 +267,14 @@ for seed in range(1, num_seeds+1):
         use_hybrid_nme_logits, hybrid_start_task, hybrid_alpha_min, hybrid_alpha_max, hybrid_alpha_steps, hybrid_old_weight, hybrid_focus_classes, hybrid_focus_weight, hybrid_class_bias_gamma, \
         use_current_prototype_blend, current_prototype_blend_alpha, current_prototype_blend_start_task, current_prototype_blend_scope, \
         current_prototype_blend_overlap_alpha, current_prototype_blend_new_alpha, \
-        use_prototype_drift_comp, prototype_drift_beta, prototype_drift_start_task, \
+        use_prototype_drift_comp, prototype_drift_beta, prototype_drift_start_task, overlap_transport_beta, stage_overlap_transport_betas, \
         exemplar_mode, exemplar_mode_start_task, \
         task_adapter_lr_mult, \
-        use_lwf, lwf_lambda, lwf_T, stage_lwf_lambdas, use_feature_distill, feature_distill_lambda, stage_feature_distill_lambdas, weighted_crossentropy, old_class_weight_power, stage_old_class_weight_powers,\
+        use_lwf, lwf_lambda, lwf_T, stage_lwf_lambdas, use_feature_distill, feature_distill_lambda, stage_feature_distill_lambdas, exclusive_old_feature_distill_boost, stage_exclusive_old_feature_distill_boosts, overlap_align_lambda, stage_overlap_align_lambdas, weighted_crossentropy, old_class_weight_power, stage_old_class_weight_powers, exclusive_old_boost, stage_exclusive_old_boosts, absent_old_current_weight, stage_absent_old_current_weights, exclusive_old_replay_boost, stage_exclusive_old_replay_boosts,\
+        use_stage2_lr_mirror_aug, stage2_lr_mirror_aug_ratio, \
         use_subject_reweight, subject_reweight_power, subject_reweight_start_task, subject_reweight_end_task, subject_reweight_ema, \
-        epochs, stage_epochs, learning_rate,is_align,log,current_date)
+        stage_balanced_ft_epochs, balanced_ft_lr_scale, balanced_ft_classifier_only, current_class_ce_weight, stage_current_class_ce_weights, \
+        stage_replay_batch_sizes, epochs, stage_epochs, learning_rate,is_align,log,current_date)
 
     current_seed_stage_results = []
 

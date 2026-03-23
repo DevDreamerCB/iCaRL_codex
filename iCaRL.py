@@ -19,8 +19,41 @@ import seaborn as sns
 import pandas as pd
 from sklearn.metrics import classification_report
 from utils import process_and_replace_loader, process_data_chn
+from channel_list import BNCI2014001_chn_names
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def build_bnci2014001_lr_mirror_indices():
+    mirror_pairs = {
+        "FZ": "FZ",
+        "FC3": "FC4",
+        "FC1": "FC2",
+        "FCZ": "FCZ",
+        "FC2": "FC1",
+        "FC4": "FC3",
+        "C5": "C6",
+        "C3": "C4",
+        "C1": "C2",
+        "CZ": "CZ",
+        "C2": "C1",
+        "C4": "C3",
+        "C6": "C5",
+        "CP3": "CP4",
+        "CP1": "CP2",
+        "CPZ": "CPZ",
+        "CP2": "CP1",
+        "CP4": "CP3",
+        "P1": "P2",
+        "PZ": "PZ",
+        "P2": "P1",
+        "POZ": "POZ",
+    }
+    channel_to_idx = {name: idx for idx, name in enumerate(BNCI2014001_chn_names)}
+    return np.array([channel_to_idx[mirror_pairs[name]] for name in BNCI2014001_chn_names], dtype=np.int64)
+
+
+BNCI2014001_LR_MIRROR_INDICES = build_bnci2014001_lr_mirror_indices()
 
 
 class FixedReplayDataLoader:
@@ -93,11 +126,17 @@ class CBiCaRL:
         use_hybrid_nme_logits, hybrid_start_task, hybrid_alpha_min, hybrid_alpha_max, hybrid_alpha_steps, hybrid_old_weight, hybrid_focus_classes, hybrid_focus_weight, hybrid_class_bias_gamma, \
         use_current_prototype_blend, current_prototype_blend_alpha, current_prototype_blend_start_task, current_prototype_blend_scope, current_prototype_blend_overlap_alpha, current_prototype_blend_new_alpha, \
         use_prototype_drift_comp, prototype_drift_beta, prototype_drift_start_task, \
+        overlap_transport_beta, stage_overlap_transport_betas, \
         exemplar_mode, exemplar_mode_start_task, \
         task_adapter_lr_mult, \
-        use_lwf, lwf_lambda, lwf_T, stage_lwf_lambdas, use_feature_distill, feature_distill_lambda, stage_feature_distill_lambdas, weighted_crossentropy, old_class_weight_power, stage_old_class_weight_powers, \
+        use_lwf, lwf_lambda, lwf_T, stage_lwf_lambdas, use_feature_distill, feature_distill_lambda, stage_feature_distill_lambdas, exclusive_old_feature_distill_boost, stage_exclusive_old_feature_distill_boosts, overlap_align_lambda, stage_overlap_align_lambdas, weighted_crossentropy, old_class_weight_power, stage_old_class_weight_powers, \
+        exclusive_old_boost, stage_exclusive_old_boosts, \
+        absent_old_current_weight, stage_absent_old_current_weights, \
+        exclusive_old_replay_boost, stage_exclusive_old_replay_boosts, \
+        use_stage2_lr_mirror_aug, stage2_lr_mirror_aug_ratio, \
         use_subject_reweight, subject_reweight_power, subject_reweight_start_task, subject_reweight_end_task, subject_reweight_ema, \
-            epochs, stage_epochs, learning_rate, is_align, log, current_date):
+        stage_balanced_ft_epochs, balanced_ft_lr_scale, balanced_ft_classifier_only, current_class_ce_weight, stage_current_class_ce_weights, \
+            stage_replay_batch_sizes, epochs, stage_epochs, learning_rate, is_align, log, current_date):
         super().__init__()
 
         self.seed = seed
@@ -119,9 +158,12 @@ class CBiCaRL:
         self.balance_sample =balance_sample
         self.balance_power = balance_power
         self.replay_batch_size = replay_batch_size
+        self.stage_replay_batch_sizes = stage_replay_batch_sizes
 
         self.train_loader=None
         self.test_loader=None
+        self.current_train_dataset = None
+        self.current_replay_dataset = None
 
         # 重放参数
         self.memory_size = memory_size
@@ -153,6 +195,8 @@ class CBiCaRL:
         self.use_prototype_drift_comp = use_prototype_drift_comp
         self.prototype_drift_beta = prototype_drift_beta
         self.prototype_drift_start_task = prototype_drift_start_task
+        self.overlap_transport_beta = overlap_transport_beta
+        self.stage_overlap_transport_betas = stage_overlap_transport_betas
         self.exemplar_mode = exemplar_mode
         self.exemplar_mode_start_task = exemplar_mode_start_task
         self.task_adapter_lr_mult = task_adapter_lr_mult
@@ -166,16 +210,33 @@ class CBiCaRL:
         self.use_feature_distill = use_feature_distill
         self.feature_distill_lambda = feature_distill_lambda
         self.stage_feature_distill_lambdas = stage_feature_distill_lambdas
+        self.exclusive_old_feature_distill_boost = exclusive_old_feature_distill_boost
+        self.stage_exclusive_old_feature_distill_boosts = stage_exclusive_old_feature_distill_boosts
+        self.overlap_align_lambda = overlap_align_lambda
+        self.stage_overlap_align_lambdas = stage_overlap_align_lambdas
 
         self.weighted_crossentropy = weighted_crossentropy
         self.old_class_weight_power = old_class_weight_power
         self.stage_old_class_weight_powers = stage_old_class_weight_powers
+        self.exclusive_old_boost = exclusive_old_boost
+        self.stage_exclusive_old_boosts = stage_exclusive_old_boosts
+        self.absent_old_current_weight = absent_old_current_weight
+        self.stage_absent_old_current_weights = stage_absent_old_current_weights
+        self.exclusive_old_replay_boost = exclusive_old_replay_boost
+        self.stage_exclusive_old_replay_boosts = stage_exclusive_old_replay_boosts
+        self.use_stage2_lr_mirror_aug = use_stage2_lr_mirror_aug
+        self.stage2_lr_mirror_aug_ratio = stage2_lr_mirror_aug_ratio
         self.use_subject_reweight = use_subject_reweight
         self.subject_reweight_power = subject_reweight_power
         self.subject_reweight_start_task = subject_reweight_start_task
         self.subject_reweight_end_task = subject_reweight_end_task
         self.subject_reweight_ema = subject_reweight_ema
         self.subject_loss_ema = {}
+        self.stage_balanced_ft_epochs = stage_balanced_ft_epochs
+        self.balanced_ft_lr_scale = balanced_ft_lr_scale
+        self.balanced_ft_classifier_only = balanced_ft_classifier_only
+        self.current_class_ce_weight = current_class_ce_weight
+        self.stage_current_class_ce_weights = stage_current_class_ce_weights
         self.class_weights = None
 
         self.counts_train_perclass = np.zeros(shape=(4,)) # 用于统计累积各类别训练样本数目
@@ -183,6 +244,39 @@ class CBiCaRL:
         # 当前阶段训练和测试的被试index
         self.train_idt = None
         self.test_idt = None
+
+    def _apply_stage2_lr_mirror_aug(self, X_train, y_train, s_train):
+        if not self.use_stage2_lr_mirror_aug or self.stage != 2:
+            return X_train, y_train, s_train
+
+        src_class = 1  # B: right hand
+        dst_class = 0  # A: left hand
+        src_indices = np.where(y_train == src_class)[0]
+        if src_indices.size == 0:
+            return X_train, y_train, s_train
+
+        ratio = max(0.0, float(self.stage2_lr_mirror_aug_ratio))
+        aug_count = int(round(src_indices.size * ratio))
+        if aug_count <= 0:
+            return X_train, y_train, s_train
+
+        rng = np.random.RandomState(self.seed * 100 + self.stage)
+        chosen = rng.choice(src_indices, size=min(src_indices.size, aug_count), replace=False)
+        aug_x = X_train[chosen][:, BNCI2014001_LR_MIRROR_INDICES, :].copy()
+        aug_y = np.full((aug_x.shape[0],), dst_class, dtype=y_train.dtype)
+        aug_s = s_train[chosen].copy()
+
+        aug_info = (
+            f"Stage2 LR mirror aug added {aug_x.shape[0]} pseudo-A samples "
+            f"from B samples (ratio={ratio:.2f})"
+        )
+        self.log.record(aug_info)
+        print(aug_info)
+
+        X_aug = np.concatenate([X_train, aug_x], axis=0)
+        y_aug = np.concatenate([y_train, aug_y], axis=0)
+        s_aug = np.concatenate([s_train, aug_s], axis=0)
+        return X_aug, y_aug, s_aug
 
     def beforeTrain(self, stage):
         self.stage = stage # stage id
@@ -241,6 +335,7 @@ class CBiCaRL:
             X_train = self.dataset.get_train_data(
                 train_idt, train_class_list, return_subject_ids=False, apply_align=True
             )[0]
+        X_train, y_train, s_train = self._apply_stage2_lr_mirror_aug(X_train, y_train, s_train)
         X_test, y_test = self.dataset.get_test_data(test_idt, test_class_list)
 
         subject_info = f"Selected subjects for train: {train_idt}"
@@ -264,6 +359,7 @@ class CBiCaRL:
         if exampler_dataset is not None:
             replay_x, replay_y, replay_s = exampler_dataset.tensors
             replay_dataset = TensorDataset(process_data_chn(replay_x.numpy()).float(), replay_y, replay_s)
+            replay_dataset = self._apply_exclusive_old_replay_boost(replay_dataset)
 
         if exampler_dataset is not None:
             train_dataset = ConcatDataset([train_dataset, replay_dataset])
@@ -273,12 +369,16 @@ class CBiCaRL:
 
         self.class_weights = self._compute_class_weights(train_dataset)
 
-        if replay_dataset is not None and self.replay_batch_size > 0:
+        current_replay_batch_size = self.replay_batch_size
+        if self.stage_replay_batch_sizes and len(self.stage_replay_batch_sizes) >= self.stage:
+            current_replay_batch_size = int(self.stage_replay_batch_sizes[self.stage - 1])
+
+        if replay_dataset is not None and current_replay_batch_size > 0:
             train_loader = FixedReplayDataLoader(
                 new_dataset=TensorDataset(Xtr.float(), Ytr, Str),
                 replay_dataset=replay_dataset,
                 batch_size=self.batch_size,
-                replay_batch_size=self.replay_batch_size,
+                replay_batch_size=current_replay_batch_size,
                 pin_memory=True,
             )
         elif balance_sample:
@@ -286,6 +386,8 @@ class CBiCaRL:
         else:
             train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, drop_last=False, pin_memory=True)
+        self.current_train_dataset = TensorDataset(Xtr.float(), Ytr, Str)
+        self.current_replay_dataset = replay_dataset
 
         return train_loader, test_loader
 
@@ -319,13 +421,90 @@ class CBiCaRL:
             dtype=torch.float32,
             device=device,
         )
+        exclusive_old_boost = float(self.exclusive_old_boost)
+        if self.stage_exclusive_old_boosts and len(self.stage_exclusive_old_boosts) >= self.stage:
+            exclusive_old_boost = float(self.stage_exclusive_old_boosts[self.stage - 1])
+        if exclusive_old_boost > 1.0 and self.stage is not None and self.stage > 1:
+            current_classes = {self.numclass - 2, self.numclass - 1}
+            for idx in range(old_k):
+                if idx not in current_classes:
+                    weights[idx] = weights[idx] * exclusive_old_boost
         return weights / weights.mean()
+
+    def _apply_exclusive_old_replay_boost(self, replay_dataset):
+        if replay_dataset is None or self.stage is None or self.stage <= 1:
+            return replay_dataset
+
+        boost = float(self.exclusive_old_replay_boost)
+        if self.stage_exclusive_old_replay_boosts and len(self.stage_exclusive_old_replay_boosts) >= self.stage:
+            boost = float(self.stage_exclusive_old_replay_boosts[self.stage - 1])
+        if boost <= 1.0:
+            return replay_dataset
+
+        replay_x, replay_y, replay_s = replay_dataset.tensors
+        current_classes = {self.numclass - 2, self.numclass - 1}
+        exclusive_mask = torch.ones_like(replay_y, dtype=torch.bool)
+        for cls in current_classes:
+            exclusive_mask &= replay_y != cls
+        exclusive_indices = torch.nonzero(exclusive_mask, as_tuple=False).view(-1)
+        if exclusive_indices.numel() == 0:
+            return replay_dataset
+
+        extra_count = int(round((boost - 1.0) * float(exclusive_indices.numel())))
+        if extra_count <= 0:
+            return replay_dataset
+
+        rng = np.random.RandomState(self.seed * 100 + self.stage * 7 + 3)
+        choice = rng.choice(exclusive_indices.cpu().numpy(), size=extra_count, replace=True)
+        extra_indices = torch.as_tensor(choice, dtype=torch.long)
+
+        replay_x = torch.cat([replay_x, replay_x[extra_indices]], dim=0)
+        replay_y = torch.cat([replay_y, replay_y[extra_indices]], dim=0)
+        replay_s = torch.cat([replay_s, replay_s[extra_indices]], dim=0)
+
+        boost_info = (
+            f"exclusive old replay boost stage {self.stage}: boost={boost:.2f}, "
+            f"exclusive_samples={exclusive_indices.numel()}, extra={extra_count}"
+        )
+        self.log.record(boost_info)
+        print(boost_info)
+        return TensorDataset(replay_x, replay_y, replay_s)
 
     def _compute_bce_loss(self, logits, target, old_k=None, subject_ids=None):
         bce_matrix = F.binary_cross_entropy_with_logits(logits, target, reduction='none')
         if self.weighted_crossentropy and self.class_weights is not None:
             active_weights = self.class_weights[:logits.size(1)].view(1, -1)
             bce_matrix = bce_matrix * active_weights
+
+        # ER-ACE-style asymmetric treatment:
+        # on current-task samples, do not strongly treat absent old-exclusive classes
+        # as negatives. They should be mainly maintained via replay/distillation.
+        if (
+            old_k is not None
+            and old_k > 0
+            and subject_ids is not None
+            and self.stage is not None
+            and self.stage > 1
+        ):
+            absent_old_current_weight = float(self.absent_old_current_weight)
+            if (
+                self.stage_absent_old_current_weights
+                and len(self.stage_absent_old_current_weights) >= self.stage
+            ):
+                absent_old_current_weight = float(self.stage_absent_old_current_weights[self.stage - 1])
+            if absent_old_current_weight < 1.0:
+                current_classes = {self.numclass - 2, self.numclass - 1}
+                absent_old_indices = [
+                    idx for idx in range(old_k)
+                    if idx not in current_classes
+                ]
+                if absent_old_indices:
+                    current_sample_indices = torch.nonzero(subject_ids >= 0, as_tuple=False).flatten()
+                    if current_sample_indices.numel() > 0:
+                        absent_old_indices = torch.as_tensor(
+                            absent_old_indices, dtype=torch.long, device=bce_matrix.device
+                        )
+                        bce_matrix[current_sample_indices[:, None], absent_old_indices[None, :]] *= absent_old_current_weight
 
         if old_k is not None and old_k > 0:
             old_class_weights = self._compute_old_class_weights(old_k)
@@ -375,7 +554,34 @@ class CBiCaRL:
             return None
         student_old = F.normalize(student_features[old_mask], p=2, dim=1)
         teacher_old = F.normalize(teacher_features[old_mask], p=2, dim=1)
-        return (1.0 - F.cosine_similarity(student_old, teacher_old, dim=1)).mean()
+        losses = 1.0 - F.cosine_similarity(student_old, teacher_old, dim=1)
+
+        boost = float(self.exclusive_old_feature_distill_boost)
+        if self.stage_exclusive_old_feature_distill_boosts and len(self.stage_exclusive_old_feature_distill_boosts) >= self.stage:
+            boost = float(self.stage_exclusive_old_feature_distill_boosts[self.stage - 1])
+        if boost > 1.0 and self.stage is not None and self.stage > 1:
+            old_labels = labels[old_mask]
+            exclusive_mask = old_labels < (self.numclass - 2)
+            if exclusive_mask.any():
+                weights = torch.ones_like(losses)
+                weights[exclusive_mask] = boost
+                losses = losses * weights
+
+        return losses.mean()
+
+    def _overlap_alignment_loss(self, features, labels, subject_ids):
+        if self.stage is None or self.stage <= 1 or subject_ids is None:
+            return None
+        overlap_cls = self.numclass - 2
+        replay_mask = (labels == overlap_cls) & (subject_ids < 0)
+        current_mask = (labels == overlap_cls) & (subject_ids >= 0)
+        if replay_mask.sum().item() == 0 or current_mask.sum().item() == 0:
+            return None
+        replay_mean = F.normalize(features[replay_mask], p=2, dim=1).mean(dim=0, keepdim=True)
+        current_mean = F.normalize(features[current_mask], p=2, dim=1).mean(dim=0, keepdim=True)
+        replay_mean = F.normalize(replay_mean, p=2, dim=1)
+        current_mean = F.normalize(current_mean, p=2, dim=1)
+        return 1.0 - F.cosine_similarity(replay_mean, current_mean, dim=1).mean()
 
     def _balance_sample_train_loader(self,train_dataset):
         '''
@@ -423,6 +629,208 @@ class CBiCaRL:
 
         return train_loader 
 
+    def _build_optimizer(self, current_epochs, lr_scale=1.0):
+        adapter_params = []
+        base_params = []
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if any(tag in name for tag in ('task_adapter', 'shared_adapter', 'task_prompt', 'lora_')):
+                adapter_params.append(param)
+            else:
+                base_params.append(param)
+
+        param_groups = []
+        if base_params:
+            param_groups.append({
+                'params': base_params,
+                'lr': self.learning_rate * lr_scale,
+                'weight_decay': 0.0001,
+            })
+        if adapter_params:
+            param_groups.append({
+                'params': adapter_params,
+                'lr': self.learning_rate * self.task_adapter_lr_mult * lr_scale,
+                'weight_decay': 0.0001,
+            })
+
+        optimizer = optim.Adam(param_groups)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=max(1, current_epochs), T_mult=1, eta_min=1e-6
+        )
+        return optimizer, scheduler
+
+    def _compute_training_loss(self, batch):
+        if len(batch) == 3:
+            x, y, subject_ids = batch
+            subject_ids = subject_ids.to(device)
+        else:
+            x, y = batch
+            subject_ids = None
+        x = x.unsqueeze(1).to(device)
+        y = y.to(device)
+
+        features, logits = self.model(x, return_feat=True)
+        target = torch.zeros_like(logits, dtype=torch.float32).to(device)
+
+        old_k = None
+        old_logits = None
+        old_features = None
+        if self.prev_model is not None:
+            self.prev_model.eval()
+            with torch.no_grad():
+                old_logits = self.prev_model(x)
+                old_features = self.prev_model.feature_extractor(x)
+                old_prob = torch.sigmoid(old_logits)
+            old_k = old_prob.size(1)
+            target[:, :old_k] = old_prob
+
+        target.scatter_(1, y.reshape(-1, 1), 1.0)
+
+        loss_bce = self._compute_bce_loss(
+            logits,
+            target,
+            old_k if self.prev_model is not None else None,
+            subject_ids=subject_ids,
+        )
+
+        if self.is_contrastive_loss:
+            loss_con = self.supervised_contrastive_loss(features, y, temperature=self.temperature)
+            loss = loss_bce + self.lambda_contrastive_loss * loss_con
+        else:
+            loss = loss_bce
+
+        current_class_ce_weight = float(self.current_class_ce_weight)
+        if self.stage_current_class_ce_weights and len(self.stage_current_class_ce_weights) >= self.stage:
+            current_class_ce_weight = float(self.stage_current_class_ce_weights[self.stage - 1])
+        if (
+            current_class_ce_weight > 0
+            and subject_ids is not None
+            and self.stage is not None
+            and self.stage > 1
+        ):
+            current_mask = subject_ids >= 0
+            if current_mask.any():
+                current_classes = torch.as_tensor([self.numclass - 2, self.numclass - 1], dtype=torch.long, device=logits.device)
+                logits_current = logits[current_mask][:, current_classes]
+                local_targets = y[current_mask] - int(current_classes[0].item())
+                loss_current_ce = F.cross_entropy(logits_current, local_targets)
+                loss = loss + current_class_ce_weight * loss_current_ce
+
+        if self.use_lwf and self.prev_model is not None:
+            current_lwf_lambda = self.lwf_lambda
+            if self.stage_lwf_lambdas and len(self.stage_lwf_lambdas) >= self.stage:
+                current_lwf_lambda = float(self.stage_lwf_lambdas[self.stage - 1])
+            student_old_logits = logits[:, :old_k]
+            teacher_old_probs = torch.sigmoid(old_logits / self.lwf_T)
+            student_old_probs = torch.sigmoid(student_old_logits / self.lwf_T)
+            loss_lwf = F.binary_cross_entropy(student_old_probs, teacher_old_probs)
+            loss = loss + current_lwf_lambda * (self.lwf_T ** 2) * loss_lwf
+
+        if self.prev_model is not None:
+            loss_feat = self._feature_distillation_loss(features, old_features, y, old_k)
+            if loss_feat is not None:
+                current_feature_distill_lambda = self.feature_distill_lambda
+                if self.stage_feature_distill_lambdas and len(self.stage_feature_distill_lambdas) >= self.stage:
+                    current_feature_distill_lambda = float(self.stage_feature_distill_lambdas[self.stage - 1])
+                loss = loss + current_feature_distill_lambda * loss_feat
+
+        loss_overlap = self._overlap_alignment_loss(features, y, subject_ids)
+        if loss_overlap is not None:
+            current_overlap_align_lambda = self.overlap_align_lambda
+            if self.stage_overlap_align_lambdas and len(self.stage_overlap_align_lambdas) >= self.stage:
+                current_overlap_align_lambda = float(self.stage_overlap_align_lambdas[self.stage - 1])
+            if current_overlap_align_lambda > 0:
+                loss = loss + current_overlap_align_lambda * loss_overlap
+        return loss
+
+    def _build_balanced_finetune_loader(self):
+        if self.current_train_dataset is None:
+            return None
+        datasets = [self.current_train_dataset]
+        if self.current_replay_dataset is not None:
+            datasets.append(self.current_replay_dataset)
+
+        xs, ys, ss = [], [], []
+        for ds in datasets:
+            x, y, s = ds.tensors
+            xs.append(x)
+            ys.append(y)
+            ss.append(s)
+        x_all = torch.cat(xs, dim=0)
+        y_all = torch.cat(ys, dim=0)
+        s_all = torch.cat(ss, dim=0)
+
+        classes = torch.unique(y_all).tolist()
+        if not classes:
+            return None
+        class_counts = [int((y_all == cls).sum().item()) for cls in classes]
+        per_class = min(class_counts)
+        if per_class <= 0:
+            return None
+
+        rng = np.random.RandomState(self.seed * 1000 + self.stage * 17 + 11)
+        picked = []
+        y_np = y_all.cpu().numpy()
+        for cls in classes:
+            cls_idx = np.where(y_np == cls)[0]
+            if len(cls_idx) > per_class:
+                cls_idx = rng.choice(cls_idx, size=per_class, replace=False)
+            picked.append(torch.as_tensor(cls_idx, dtype=torch.long))
+        picked = torch.cat(picked, dim=0)
+        picked = picked[torch.randperm(picked.numel())]
+
+        info = f"balanced finetune stage {self.stage}: classes={classes}, per_class={per_class}, total={picked.numel()}"
+        self.log.record(info)
+        print(info)
+
+        dataset = TensorDataset(x_all[picked], y_all[picked], s_all[picked])
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, drop_last=False, pin_memory=True)
+
+    def _run_balanced_finetune(self, writer=None):
+        ft_epochs = 0
+        if self.stage_balanced_ft_epochs and len(self.stage_balanced_ft_epochs) >= self.stage:
+            ft_epochs = int(self.stage_balanced_ft_epochs[self.stage - 1])
+        if ft_epochs <= 0:
+            return
+
+        ft_loader = self._build_balanced_finetune_loader()
+        if ft_loader is None:
+            return
+
+        if self.balanced_ft_classifier_only:
+            optimizer = optim.Adam(
+                [{
+                    'params': self.model.fc.parameters(),
+                    'lr': self.learning_rate * self.balanced_ft_lr_scale,
+                    'weight_decay': 0.0001,
+                }]
+            )
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                optimizer, T_0=max(1, ft_epochs), T_mult=1, eta_min=1e-6
+            )
+        else:
+            optimizer, scheduler = self._build_optimizer(ft_epochs, lr_scale=self.balanced_ft_lr_scale)
+        ft_len = len(ft_loader)
+        for epoch in range(ft_epochs):
+            epoch_losses = []
+            self.model.train()
+            for step, batch in enumerate(ft_loader):
+                loss = self._compute_training_loss(batch)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                scheduler.step(epoch + float(step) / float(max(1, ft_len)))
+                epoch_losses.append(loss.item())
+            overall_acc = self._test(self.test_loader, return_perclass=False)
+            loss_value = float(np.mean(epoch_losses)) if epoch_losses else 0.0
+            info = f"balanced_ft epoch:{epoch+1},train avg loss:{loss_value},acc:{overall_acc}"
+            self.log.record(info)
+            print(info)
+            if writer is not None:
+                writer.add_scalar('Loss/balanced_ft_epoch', loss_value, epoch)
+                writer.add_scalar('Acc/balanced_ft_val', overall_acc, epoch)
+
     def train(self):
         current_epochs = self.epochs
         if self.stage_epochs and len(self.stage_epochs) >= self.stage:
@@ -442,35 +850,7 @@ class CBiCaRL:
         
         # input(' ')
 
-        adapter_params = []
-        base_params = []
-        for name, param in self.model.named_parameters():
-            if not param.requires_grad:
-                continue
-            if any(tag in name for tag in ('task_adapter', 'shared_adapter', 'task_prompt', 'lora_')):
-                adapter_params.append(param)
-            else:
-                base_params.append(param)
-
-        param_groups = []
-        if base_params:
-            param_groups.append({
-                'params': base_params,
-                'lr': self.learning_rate,
-                'weight_decay': 0.0001,
-            })
-        if adapter_params:
-            param_groups.append({
-                'params': adapter_params,
-                'lr': self.learning_rate * self.task_adapter_lr_mult,
-                'weight_decay': 0.0001,
-            })
-
-        optimizer = optim.Adam(param_groups)
-
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=current_epochs, T_mult=1, eta_min=1e-6
-        )
+        optimizer, scheduler = self._build_optimizer(current_epochs)
 
         train_loader_len = len(self.train_loader)
 
@@ -481,62 +861,7 @@ class CBiCaRL:
             self.model.train()
             
             for step, batch in enumerate(self.train_loader):
-                if len(batch) == 3:
-                    x, y, subject_ids = batch
-                    subject_ids = subject_ids.to(device)
-                else:
-                    x, y = batch
-                    subject_ids = None
-                x = x.unsqueeze(1).to(device)  # (B,1,Chans,Samples)
-                y = y.to(device)
-                
-                features, logits = self.model(x, return_feat=True)
-
-                # iCaRL原版
-                target = torch.zeros_like(logits, dtype=torch.float32).to(device)
-                
-                if self.prev_model is not None:
-                    self.prev_model.eval()
-                    with torch.no_grad():
-                        old_logits = self.prev_model(x)      # (B, old_k)
-                        old_features = self.prev_model.feature_extractor(x)
-                        old_prob = torch.sigmoid(old_logits) # (B, old_k)
-                    old_k = old_prob.size(1)
-                    # 覆盖 target 的旧类部分为教师输出（论文 iCaRL 的做法）
-                    target[:, :old_k] = old_prob
-                
-                target.scatter_(1, y.reshape(-1,1), 1.0)
-                
-                loss_bce = self._compute_bce_loss(
-                    logits,
-                    target,
-                    old_k if self.prev_model is not None else None,
-                    subject_ids=subject_ids,
-                )
-
-                if self.is_contrastive_loss:
-                    loss_con = self.supervised_contrastive_loss(features, y, temperature=self.temperature)
-                    loss = loss_bce + self.lambda_contrastive_loss * loss_con
-                else:
-                    loss = loss_bce
-
-                if self.use_lwf and self.prev_model is not None:
-                    current_lwf_lambda = self.lwf_lambda
-                    if self.stage_lwf_lambdas and len(self.stage_lwf_lambdas) >= self.stage:
-                        current_lwf_lambda = float(self.stage_lwf_lambdas[self.stage - 1])
-                    student_old_logits = logits[:, :old_k]
-                    teacher_old_probs = torch.sigmoid(old_logits / self.lwf_T)
-                    student_old_probs = torch.sigmoid(student_old_logits / self.lwf_T)
-                    loss_lwf = F.binary_cross_entropy(student_old_probs, teacher_old_probs)
-                    loss = loss + current_lwf_lambda * (self.lwf_T ** 2) * loss_lwf
-
-                if self.prev_model is not None:
-                    loss_feat = self._feature_distillation_loss(features, old_features, y, old_k)
-                    if loss_feat is not None:
-                        current_feature_distill_lambda = self.feature_distill_lambda
-                        if self.stage_feature_distill_lambdas and len(self.stage_feature_distill_lambdas) >= self.stage:
-                            current_feature_distill_lambda = float(self.stage_feature_distill_lambdas[self.stage - 1])
-                        loss = loss + current_feature_distill_lambda * loss_feat
+                loss = self._compute_training_loss(batch)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -564,6 +889,8 @@ class CBiCaRL:
             # 记录当前epoch的loss到TensorBoard
             writer.add_scalar('Loss/train_epoch', epoch_train_loss, epoch)
             writer.add_scalar('Acc/val', overall_acc, epoch)
+
+        self._run_balanced_finetune(writer)
 
     def supervised_contrastive_loss(self, features, labels, temperature=0.07):
         """
@@ -868,6 +1195,7 @@ class CBiCaRL:
                 self.class_radius_set[cls_idx] = cls_blend_alpha * self.class_radius_set[cls_idx] + (1.0 - cls_blend_alpha) * train_radius
                 self.class_var_set[cls_idx] = cls_blend_alpha * self.class_var_set[cls_idx] + (1.0 - cls_blend_alpha) * train_var
 
+        self._apply_overlap_prototype_transport()
         self._apply_prototype_drift_compensation()
 
     def _extract_features_with_model(self, model, x, batch_size=64):
@@ -918,6 +1246,50 @@ class CBiCaRL:
             msg = (
                 f"prototype drift compensation stage {self.stage}: beta={beta:.3f}; "
                 + ", ".join(drift_info)
+            )
+            self.log.record(msg)
+            print(msg)
+
+    def _apply_overlap_prototype_transport(self):
+        if self.stage is None or self.stage <= 1:
+            return
+
+        beta = float(self.overlap_transport_beta)
+        if self.stage_overlap_transport_betas and len(self.stage_overlap_transport_betas) >= self.stage:
+            beta = float(self.stage_overlap_transport_betas[self.stage - 1])
+        if beta <= 0:
+            return
+
+        overlap_cls = self.numclass - 2
+        if overlap_cls < 0 or overlap_cls >= len(self.class_mean_set):
+            return
+
+        overlap_train_mean, _, _ = self._compute_current_blend_target(overlap_cls, device)
+        if overlap_train_mean is None:
+            return
+
+        overlap_memory_mean = self.class_mean_set[overlap_cls]
+        shift = overlap_train_mean - overlap_memory_mean
+        shift_norm = float(np.linalg.norm(shift))
+        if shift_norm <= 1e-12:
+            return
+
+        old_k = min(len(self.exemplar_set), len(self.class_mean_set), self.numclass - 1)
+        transported = []
+        for cls_idx in range(old_k):
+            if cls_idx >= overlap_cls:
+                continue
+            shifted_mean = self.class_mean_set[cls_idx] + beta * shift
+            if self.use_normalized_nme:
+                shifted_mean = shifted_mean / (np.linalg.norm(shifted_mean, keepdims=True) + 1e-12)
+            self.class_mean_set[cls_idx] = shifted_mean
+            transported.append(str(cls_idx))
+
+        if transported:
+            msg = (
+                f"overlap prototype transport stage {self.stage}: "
+                f"beta={beta:.3f}, overlap_class={overlap_cls}, "
+                f"shift_norm={shift_norm:.4f}, transported_old={','.join(transported)}"
             )
             self.log.record(msg)
             print(msg)
@@ -1085,8 +1457,8 @@ class CBiCaRL:
                 best_alpha = float(alpha)
 
         self.hybrid_alpha = best_alpha
+        fused = best_alpha * nme_scores + (1.0 - best_alpha) * fc_scores
         if self.hybrid_class_bias_gamma > 0:
-            fused = best_alpha * nme_scores + (1.0 - best_alpha) * fc_scores
             pred = fused.argmax(axis=1)
             bias = np.zeros(fused.shape[1], dtype=np.float64)
             recalls = []

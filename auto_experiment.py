@@ -120,6 +120,8 @@ def run_experiment(args):
     env["ICARL_BALANCE_SAMPLE"] = "true" if args.balance_sample else "false"
     env["ICARL_BALANCE_POWER"] = str(args.balance_power)
     env["ICARL_REPLAY_BATCH_SIZE"] = str(args.replay_batch_size)
+    if args.stage_replay_batch_sizes:
+        env["ICARL_STAGE_REPLAY_BATCH_SIZES"] = args.stage_replay_batch_sizes
     env["ICARL_USE_ALIGN"] = "true" if args.use_align else "false"
     env["ICARL_MEMORY_SIZE"] = str(args.memory_size)
     env["ICARL_TRAINABLE_PART"] = args.trainable_part
@@ -127,6 +129,15 @@ def run_experiment(args):
     env["ICARL_OLD_CLASS_WEIGHT_POWER"] = str(args.old_class_weight_power)
     if args.stage_old_class_weight_powers:
         env["ICARL_STAGE_OLD_CLASS_WEIGHT_POWERS"] = args.stage_old_class_weight_powers
+    env["ICARL_EXCLUSIVE_OLD_BOOST"] = str(args.exclusive_old_boost)
+    if args.stage_exclusive_old_boosts:
+        env["ICARL_STAGE_EXCLUSIVE_OLD_BOOSTS"] = args.stage_exclusive_old_boosts
+    env["ICARL_ABSENT_OLD_CURRENT_WEIGHT"] = str(args.absent_old_current_weight)
+    if args.stage_absent_old_current_weights:
+        env["ICARL_STAGE_ABSENT_OLD_CURRENT_WEIGHTS"] = args.stage_absent_old_current_weights
+    env["ICARL_EXCLUSIVE_OLD_REPLAY_BOOST"] = str(args.exclusive_old_replay_boost)
+    if args.stage_exclusive_old_replay_boosts:
+        env["ICARL_STAGE_EXCLUSIVE_OLD_REPLAY_BOOSTS"] = args.stage_exclusive_old_replay_boosts
     env["ICARL_USE_LWF"] = "true" if args.use_lwf else "false"
     env["ICARL_LWF_LAMBDA"] = str(args.lwf_lambda)
     env["ICARL_LWF_T"] = str(args.lwf_t)
@@ -136,6 +147,12 @@ def run_experiment(args):
     env["ICARL_FEATURE_DISTILL_LAMBDA"] = str(args.feature_distill_lambda)
     if args.stage_feature_distill_lambdas:
         env["ICARL_STAGE_FEATURE_DISTILL_LAMBDAS"] = args.stage_feature_distill_lambdas
+    env["ICARL_EXCLUSIVE_OLD_FEATURE_DISTILL_BOOST"] = str(args.exclusive_old_feature_distill_boost)
+    if args.stage_exclusive_old_feature_distill_boosts:
+        env["ICARL_STAGE_EXCLUSIVE_OLD_FEATURE_DISTILL_BOOSTS"] = args.stage_exclusive_old_feature_distill_boosts
+    env["ICARL_OVERLAP_ALIGN_LAMBDA"] = str(args.overlap_align_lambda)
+    if args.stage_overlap_align_lambdas:
+        env["ICARL_STAGE_OVERLAP_ALIGN_LAMBDAS"] = args.stage_overlap_align_lambdas
     env["ICARL_USE_NORMALIZED_NME"] = "true" if args.use_normalized_nme else "false"
     env["ICARL_USE_HYBRID_NME_LOGITS"] = "true" if args.use_hybrid_nme_logits else "false"
     env["ICARL_HYBRID_START_TASK"] = str(args.hybrid_start_task)
@@ -156,6 +173,9 @@ def run_experiment(args):
     env["ICARL_USE_PROTOTYPE_DRIFT_COMP"] = "true" if args.use_prototype_drift_comp else "false"
     env["ICARL_PROTOTYPE_DRIFT_BETA"] = str(args.prototype_drift_beta)
     env["ICARL_PROTOTYPE_DRIFT_START_TASK"] = str(args.prototype_drift_start_task)
+    env["ICARL_OVERLAP_TRANSPORT_BETA"] = str(args.overlap_transport_beta)
+    if args.stage_overlap_transport_betas:
+        env["ICARL_STAGE_OVERLAP_TRANSPORT_BETAS"] = args.stage_overlap_transport_betas
     env["ICARL_EXEMPLAR_MODE"] = args.exemplar_mode
     env["ICARL_EXEMPLAR_MODE_START_TASK"] = str(args.exemplar_mode_start_task)
     env["ICARL_USE_TASK_ADAPTER"] = "true" if args.use_task_adapter else "false"
@@ -171,11 +191,20 @@ def run_experiment(args):
     env["ICARL_TASK_AFFINE_START_TASK"] = str(args.task_affine_start_task)
     env["ICARL_USE_TASK_BN"] = "true" if args.use_task_bn else "false"
     env["ICARL_TASK_BN_START_TASK"] = str(args.task_bn_start_task)
+    env["ICARL_USE_STAGE2_LR_MIRROR_AUG"] = "true" if args.use_stage2_lr_mirror_aug else "false"
+    env["ICARL_STAGE2_LR_MIRROR_AUG_RATIO"] = str(args.stage2_lr_mirror_aug_ratio)
     env["ICARL_USE_SUBJECT_REWEIGHT"] = "true" if args.use_subject_reweight else "false"
     env["ICARL_SUBJECT_REWEIGHT_POWER"] = str(args.subject_reweight_power)
     env["ICARL_SUBJECT_REWEIGHT_START_TASK"] = str(args.subject_reweight_start_task)
     env["ICARL_SUBJECT_REWEIGHT_END_TASK"] = str(args.subject_reweight_end_task)
     env["ICARL_SUBJECT_REWEIGHT_EMA"] = str(args.subject_reweight_ema)
+    if args.stage_balanced_ft_epochs:
+        env["ICARL_STAGE_BALANCED_FT_EPOCHS"] = args.stage_balanced_ft_epochs
+    env["ICARL_BALANCED_FT_LR_SCALE"] = str(args.balanced_ft_lr_scale)
+    env["ICARL_BALANCED_FT_CLASSIFIER_ONLY"] = "true" if args.balanced_ft_classifier_only else "false"
+    env["ICARL_CURRENT_CLASS_CE_WEIGHT"] = str(args.current_class_ce_weight)
+    if args.stage_current_class_ce_weights:
+        env["ICARL_STAGE_CURRENT_CLASS_CE_WEIGHTS"] = args.stage_current_class_ce_weights
 
     if args.lr is not None:
         env["ICARL_LR"] = str(args.lr)
@@ -253,6 +282,12 @@ def main():
     parser.set_defaults(weighted_ce=False)
     parser.add_argument("--old-class-weight-power", type=float, default=0.0)
     parser.add_argument("--stage-old-class-weight-powers", default="")
+    parser.add_argument("--exclusive-old-boost", type=float, default=1.0)
+    parser.add_argument("--stage-exclusive-old-boosts", default="")
+    parser.add_argument("--absent-old-current-weight", type=float, default=1.0)
+    parser.add_argument("--stage-absent-old-current-weights", default="")
+    parser.add_argument("--exclusive-old-replay-boost", type=float, default=1.0)
+    parser.add_argument("--stage-exclusive-old-replay-boosts", default="")
     parser.add_argument("--use-lwf", dest="use_lwf", action="store_true")
     parser.add_argument("--no-use-lwf", dest="use_lwf", action="store_false")
     parser.set_defaults(use_lwf=False)
@@ -264,6 +299,10 @@ def main():
     parser.set_defaults(use_feature_distill=False)
     parser.add_argument("--feature-distill-lambda", type=float, default=0.1)
     parser.add_argument("--stage-feature-distill-lambdas", default="")
+    parser.add_argument("--exclusive-old-feature-distill-boost", type=float, default=1.0)
+    parser.add_argument("--stage-exclusive-old-feature-distill-boosts", default="")
+    parser.add_argument("--overlap-align-lambda", type=float, default=0.0)
+    parser.add_argument("--stage-overlap-align-lambdas", default="")
     parser.add_argument("--use-normalized-nme", dest="use_normalized_nme", action="store_true")
     parser.add_argument("--no-use-normalized-nme", dest="use_normalized_nme", action="store_false")
     parser.set_defaults(use_normalized_nme=False)
@@ -291,6 +330,8 @@ def main():
     parser.set_defaults(use_prototype_drift_comp=False)
     parser.add_argument("--prototype-drift-beta", type=float, default=0.5)
     parser.add_argument("--prototype-drift-start-task", type=int, default=2)
+    parser.add_argument("--overlap-transport-beta", type=float, default=0.0)
+    parser.add_argument("--stage-overlap-transport-betas", default="")
     parser.add_argument("--exemplar-mode", default="legacy_herding")
     parser.add_argument("--exemplar-mode-start-task", type=int, default=1)
     parser.add_argument("--use-task-adapter", action="store_true")
@@ -314,6 +355,10 @@ def main():
     parser.add_argument("--no-use-task-bn", dest="use_task_bn", action="store_false")
     parser.set_defaults(use_task_bn=False)
     parser.add_argument("--task-bn-start-task", type=int, default=0)
+    parser.add_argument("--use-stage2-lr-mirror-aug", action="store_true")
+    parser.add_argument("--no-use-stage2-lr-mirror-aug", dest="use_stage2_lr_mirror_aug", action="store_false")
+    parser.set_defaults(use_stage2_lr_mirror_aug=False)
+    parser.add_argument("--stage2-lr-mirror-aug-ratio", type=float, default=0.5)
     parser.add_argument("--use-subject-reweight", action="store_true")
     parser.add_argument("--no-use-subject-reweight", dest="use_subject_reweight", action="store_false")
     parser.set_defaults(use_subject_reweight=False)
@@ -321,6 +366,11 @@ def main():
     parser.add_argument("--subject-reweight-start-task", type=int, default=2)
     parser.add_argument("--subject-reweight-end-task", type=int, default=99)
     parser.add_argument("--subject-reweight-ema", type=float, default=0.9)
+    parser.add_argument("--stage-balanced-ft-epochs", default="")
+    parser.add_argument("--balanced-ft-lr-scale", type=float, default=0.1)
+    parser.add_argument("--balanced-ft-classifier-only", action="store_true")
+    parser.add_argument("--current-class-ce-weight", type=float, default=0.0)
+    parser.add_argument("--stage-current-class-ce-weights", default="")
     parser.add_argument("--use-contrastive", action="store_true")
     parser.add_argument("--no-use-contrastive", dest="use_contrastive", action="store_false")
     parser.set_defaults(use_contrastive=True)
@@ -329,6 +379,7 @@ def main():
     parser.set_defaults(balance_sample=True)
     parser.add_argument("--balance-power", type=float, default=0.5)
     parser.add_argument("--replay-batch-size", type=int, default=0)
+    parser.add_argument("--stage-replay-batch-sizes", default="")
     parser.add_argument("--use-align", action="store_true")
     parser.add_argument("--no-use-align", dest="use_align", action="store_false")
     parser.set_defaults(use_align=True)
