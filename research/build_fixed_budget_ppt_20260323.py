@@ -124,6 +124,16 @@ slides = [
         None,
     ),
     (
+        "它能推广到 Stage3 吗",
+        [
+            "s2ace00_s3ace25_stage101212_short：84.72 / 60.96 / 49.61",
+            "s2ace00_s3ace00_stage101212_short：84.72 / 60.96 / 49.69",
+            "同口径主线：84.72 / 60.96 / 50.54",
+            "结论：asymmetric BCE 的思想成立，但当前最有效的作用阶段仍然是 stage2，不应简单机械推广到 stage3。",
+        ],
+        None,
+    ),
+    (
         "近期尝试但未成立的方法",
         [
             "s2curce family：0.1 short 很强，但 0.1/0.05 的 full 都崩。",
@@ -156,7 +166,7 @@ slides = [
         "后续更值得做的方向",
         [
             "继续围绕 stage2 的缺失旧类处理，而不是继续叠 stage3 patch。",
-            "优先尝试：更温和、更稳的 stage2 old-class treatment。",
+            "优先尝试：更温和、更稳的 stage2 missing-class treatment。",
             "评价时固定看：task2、S4/S5/S6、A=Left Hand on 4/5/6、task3。",
         ],
         None,

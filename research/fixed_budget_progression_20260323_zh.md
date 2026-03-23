@@ -127,6 +127,35 @@
 |---|---:|---|
 | `s2ace00_ptblendnew02_fd0010s23_short` | `84.72 / 62.11 / 49.31` | 没有让方法更通用，反而更像过约束 |
 
+### 5.5 把 asymmetric BCE 从 `stage2` 推广到 `stage3`
+
+这个方向是最近新增的重要检验，因为它直接回答了一个更通用的方法学问题：
+
+- `s2ace00` 是否只是一个 `stage2` 特判技巧
+- 还是它其实可以推广成“所有阶段都适用的缺失类不当负类压制”机制
+
+实验：
+
+| 运行名 | 结果 | 结论 |
+|---|---:|---|
+| `s2ace00_s3ace25_ptblendnew02_stage101212_short` | `84.72 / 60.96 / 49.61` | 比同口径主线弱 |
+| `s2ace00_s3ace00_ptblendnew02_stage101212_short` | `84.72 / 60.96 / 49.69` | 仍不如同口径主线 |
+
+对比同口径主线：
+
+| 运行名 | 结果 |
+|---|---:|
+| `s2ace00_ptblendnew02_stage101212_short` | `84.72 / 60.96 / 50.54` |
+
+结论：
+
+- asymmetric BCE 作为“缺失旧类不应被当前样本压制”的思想，本身是合理的。
+- 但在当前场景里，它**最清晰、最有效的作用阶段仍然是 `stage2`**。
+- 一旦直接推广到 `stage3`，`task2` 不涨，`task3` 也没有超过同口径主线。
+- 这说明：
+  - `stage2` 的“缺失类 A 在新域 4/5/6 中被错误当负类压制”是一个非常特殊、非常强的结构性问题；
+  - `stage3` 的 old/new/overlap 关系更复杂，不能简单复用同一个 asymmetric BCE 规则。
+
 ## 6. 固定预算下的主线简化判断
 
 ### 6.1 `task affine`
@@ -196,6 +225,6 @@
    - `s2ace00 + new_only ptblend`
    - 在固定预算 `10,12,12` 下使用
 
-4. `stage2 current-class CE`、balanced finetune、单纯拉长 stage2、把 feature distill 前移，这些在正确口径下都没有打过当前主线。
+4. `stage2 current-class CE`、balanced finetune、单纯拉长 stage2、把 feature distill 前移、以及把 asymmetric BCE 直接推广到 `stage3`，这些在正确口径下都没有打过当前主线。
 
 5. 后续若继续做新实验，应当在这个固定预算标准下展开，而不是再回到默认 `30/30/30`。

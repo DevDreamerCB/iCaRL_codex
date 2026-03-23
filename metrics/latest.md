@@ -1,18 +1,18 @@
 # Latest Metrics
 
-- run tag: `20260323_142346_20260323_142342_s2ace00_ptblendnew02_stage101212_confirm`
+- run tag: `20260323_150943_20260323_150938_s2ace00_s3ace00_ptblendnew02_stage101212_short`
 - epochs: ``
-- seeds: `3`
+- seeds: `1`
 - gpu: `9`
-- note: `s2ace00_ptblendnew02_stage101212_confirm`
+- note: `s2ace00_s3ace00_ptblendnew02_stage101212_short`
 - stage epochs: ``
 - trainable part: ``
 - proto align: `` @ ``
-- task1 / stage1 total: `84.18`
-- task2 / stage2 total: `60.7`
-- task3 / stage3 total: `49.4`
-- score: `59.75`
-- log: `20260323_142346_20260323_142342_s2ace00_ptblendnew02_stage101212_confirm/log_MIRepNet_EA_2026-03-23_06_23_46.txt;20260323_142346_20260323_142342_s2ace00_ptblendnew02_stage101212_confirm/log_MIRepNet_EA_2026-03-23_06_26_24.txt;20260323_142346_20260323_142342_s2ace00_ptblendnew02_stage101212_confirm/log_MIRepNet_EA_2026-03-23_06_29_03.txt`
+- task1 / stage1 total: `84.72`
+- task2 / stage2 total: `60.96`
+- task3 / stage3 total: `49.69`
+- score: `60.08`
+- log: `20260323_150943_20260323_150938_s2ace00_s3ace00_ptblendnew02_stage101212_short/log_MIRepNet_EA_2026-03-23_07_09_43.txt`
 
 ## Best Full Confirm So Far
 - run tag: `20260323_095352_20260323_095348_s2ace00_ptblendnew02_s3_confirm`
